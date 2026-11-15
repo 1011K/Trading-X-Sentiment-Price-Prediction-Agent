@@ -145,11 +145,12 @@ def _reconcile_daily_ledger(trades: pd.DataFrame, roundtrip_cost_bps: float) -> 
 
 def trading_summary(
     trades: pd.DataFrame, *, roundtrip_cost_bps: float | None = None,
-) -> Dict[str, float | str]:
+) -> dict[str, float | str | list[dict[str, str]]]:
     """Summarize reconciled XNYS session returns, including cash periods."""
     result = {
         "n_sessions": 0,
         "n_trades": 0,
+        "n_cash_sessions": "WITHHELD",
         "mean_net_ret": "WITHHELD",
         "cumulative_net_ret": "WITHHELD",
         "hit_rate": "WITHHELD",
@@ -160,6 +161,8 @@ def trading_summary(
     }
     if trades.empty:
         result["withheld_reason"] = trades.attrs.get("withheld_reason", "No eligible daily sessions")
+        if trades.attrs.get("fill_issues"):
+            result["fill_issues"] = trades.attrs["fill_issues"]
         return result
 
     cost = (
@@ -180,6 +183,9 @@ def trading_summary(
     result.update(
         n_sessions=len(rets),
         n_trades=int(np.count_nonzero(active)),
+        n_cash_sessions=int(np.count_nonzero(~active)),
+        first_fill_session=str(trades["fill_date"].iloc[0]),
+        last_fill_session=str(trades["fill_date"].iloc[-1]),
         mean_net_ret=mean,
         cumulative_net_ret=float(equity[-1] - 1.0),
         max_drawdown=float(np.min(equity / np.maximum.accumulate(equity) - 1.0)),

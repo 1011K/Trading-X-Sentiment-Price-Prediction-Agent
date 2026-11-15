@@ -75,12 +75,16 @@ def build_post_features(
     if len(df) < n_before:
         log.info("Deduplicated %d duplicate post_id rows", n_before - len(df))
 
-    # Cashtag gate
+    # Cashtags and source-normalized issuer matches are kept distinct.
     if "has_cashtag" not in df.columns:
         raise DataError("Posts missing required column 'has_cashtag'")
-    df = df[df["has_cashtag"]].copy()
+    relevant = df["has_cashtag"].eq(True)
+    if "relevance_basis" in df and "source" in df:
+        archive = df["source"].isin({"apify_x_export", "authorized_x_archive"})
+        relevant |= archive & df["relevance_basis"].isin({"issuer_keyword", "ticker_context"})
+    df = df.loc[relevant].copy()
     if df.empty:
-        log.warning("No cashtag posts remaining after filter")
+        log.warning("No symbol-relevant posts remaining after filter")
         return pd.DataFrame()
 
     # Session assignment with error isolation

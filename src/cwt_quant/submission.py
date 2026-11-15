@@ -18,12 +18,15 @@ from .calendar import XNYSCalendar
 from .config import Config
 from .data import _empty_posts_schema
 from .exceptions import CWTQuantError, DataError
+from .logging_utils import get_logger
 from .metrics import forecast_metrics, trading_summary
 from .nowcast import open_nowcasts
 from .pipeline import run_pipeline
 from .replay_prices import capture_prices, evaluation_bounds, load_prices
 from .replay_store import store_run
 from .x_analysis import chart_sentiment, sentiment_series, summarize_sentiment
+
+log = get_logger(__name__)
 
 
 def _forecast_rows(result: dict) -> pd.DataFrame:
@@ -169,19 +172,23 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
     report.extend([
         "", "## Hypothetical execution and risk", "",
         "Each positive n+1 signal places a next-session open-to-close long position. "
+        "The signal targets a close-to-close log return, so the forecast and the strategy "
+        "have different return intervals. "
         "The ledger charges 10 basis points per round trip, includes cash sessions, and uses no overlapping holdings. "
         "Observed quotes approximate fills. The calculation excludes market impact, capacity and taxes.",
-        "", "| Model | Sessions | Trades | Sharpe | Sortino | Max drawdown |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        "", "| Model | Sessions | Trades | Cash | Sharpe | Sortino | Max drawdown |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for model, item in risk.items():
         report.append("| " + " | ".join([model] + [
             _markdown_value(item.get(key)) for key in
-            ("n_sessions", "n_trades", "approx_sharpe", "approx_sortino", "max_drawdown")
+            ("n_sessions", "n_trades", "n_cash_sessions", "approx_sharpe", "approx_sortino", "max_drawdown")
         ]) + " |")
     for model, item in risk.items():
         if item.get("withheld_reason"):
             report.extend(["", f"`{model}` risk was withheld. {item['withheld_reason']}."])
+        for issue in item.get("fill_issues", []):
+            report.append(f"- {issue['session_date']}: {issue['reason']} ({issue['detail']}).")
     report.extend([
         "", "## Limits", "",
         "These results cover one retrospective price window. They do not establish live fills, "
@@ -195,7 +202,7 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
              x_path: Path | None = None, x_manifest: Path | None = None,
              current_news: dict | None = None) -> dict:
     from . import __version__
-    from .backtest import trading_diagnostic
+    from .backtest import TradingFillError, trading_diagnostic
     from .metrics import matched_predictions
     from .x_export import coverage_audit
 
@@ -256,8 +263,12 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
         except DataError as exc:
             trades[model] = pd.DataFrame()
             trades[model].attrs["withheld_reason"] = str(exc)
+            if isinstance(exc, TradingFillError):
+                trades[model].attrs["fill_issues"] = exc.issues
         risk[model] = trading_summary(trades[model],
                                       roundtrip_cost_bps=trade_cfg.diagnostic_roundtrip_cost_bps)
+        if risk[model].get("withheld_reason"):
+            log.warning("%s trading risk withheld: %s", model, risk[model]["withheld_reason"])
 
     x_available = "price_sentiment" in comparisons
     if x_available:
@@ -265,7 +276,7 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     elif x_source:
         note = "The supplied X export lacked verified historical availability or enough eligible coverage."
     else:
-        note = "No authorized historical Apify X export was supplied."
+        note = "No authorized target-window X export was available for this replay."
     origins = comparisons["price_only"]["origin"]
     manifest = {
         "ticker": ticker, "model_version": __version__,
@@ -282,6 +293,10 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
         "observed_close": float(prices.iloc[-1]["close"]),
         "sentiment_outlook": summarize_sentiment(series, end),
         "open_nowcast_metrics": nowcast_metrics,
+        "comparison_sample": {
+            model: {"candidate_rows": len(active[model]), "matched_rows": len(frame)}
+            for model, frame in comparisons.items()
+        },
         "current_news": current_news or {"note": "No current news source was enabled."},
         "risk": risk,
     }

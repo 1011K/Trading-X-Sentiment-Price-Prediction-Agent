@@ -20,6 +20,14 @@ from .validation import assert_no_future_labels
 log = get_logger(__name__)
 
 
+class TradingFillError(DataError):
+    """A dated fill failure that withholds the entire risk calculation."""
+
+    def __init__(self, session: date, reason: str, detail: str) -> None:
+        super().__init__(detail)
+        self.issues = [{"session_date": session.isoformat(), "reason": reason, "detail": detail}]
+
+
 def walk_forward(
     panel: pd.DataFrame,
     cfg: Config,
@@ -36,6 +44,11 @@ def walk_forward(
     """
     if panel is None or panel.empty:
         raise DataError("Cannot run walk-forward on empty panel")
+    if (
+        not isinstance(panel.index, pd.DatetimeIndex) or not panel.index.is_unique
+        or not panel.index.is_monotonic_increasing
+    ):
+        raise DataError("Walk-forward requires unique, chronological session timestamps")
 
     feature_sets = get_feature_sets(cfg)
     model_start_dates = model_start_dates or {}
@@ -152,12 +165,12 @@ def trading_diagnostic(
     panel: pd.DataFrame,
     cfg: Config,
 ) -> pd.DataFrame:
-    """Hypothetical next-open-to-close ledger at daily XNYS frequency."""
+    """Trade a close-to-close forecast signal at the next XNYS open and close."""
     if preds is None or preds.empty or not cfg.report_trading_diagnostic:
         return pd.DataFrame()
 
-    if not {"horizon", "origin", "y_hat"}.issubset(preds):
-        raise DataError("Trading diagnostic requires horizon, origin and y_hat")
+    if not preds.columns.is_unique or not {"horizon", "origin", "y_hat"}.issubset(preds):
+        raise DataError("Trading diagnostic requires unique horizon, origin and y_hat columns")
     p1 = preds.loc[preds["horizon"].eq(1), ["origin", "y_hat"]].copy()
     if p1.empty:
         return pd.DataFrame()
@@ -168,8 +181,8 @@ def trading_diagnostic(
     bar_dates = pd.Index(panel.index.tz_convert(cal.tz).date)
     if bar_dates.hasnans or bar_dates.has_duplicates:
         raise DataError("Trading bars contain a missing or duplicate session date")
-    if not {"open", "close"}.issubset(panel):
-        raise DataError("Trading bars require open and close prices")
+    if not panel.columns.is_unique or not {"open", "close"}.issubset(panel):
+        raise DataError("Trading bars require unique open and close price columns")
     origins = pd.Index(p1["origin"])
     if not isinstance(origins, pd.DatetimeIndex) or origins.tz is None or origins.hasnans:
         raise DataError("Trading signals require timezone-aware session-close origins")
@@ -202,11 +215,15 @@ def trading_diagnostic(
         session_open = cal.session_open_dt(fill_date)
         session_close = cal.session_close_dt(fill_date)
         if session_close not in panel.index:
-            raise DataError(f"Trading fill missing for next XNYS session {fill_date}")
+            raise TradingFillError(
+                fill_date, "missing_fill_bar", f"Trading fill missing for next XNYS session {fill_date}",
+            )
         prices = pd.to_numeric(panel.loc[session_close, ["open", "close"]], errors="coerce")
         open_price, close_price = prices.to_numpy(dtype=float, na_value=np.nan)
         if not np.isfinite([open_price, close_price]).all() or min(open_price, close_price) <= 0:
-            raise DataError(f"Trading fill prices must be finite and positive on {fill_date}")
+            raise TradingFillError(
+                fill_date, "invalid_fill_prices", f"Trading fill prices must be finite and positive on {fill_date}",
+            )
 
         position = int(y_hat > 0)
         raw_ret = float(close_price) / float(open_price) - 1.0

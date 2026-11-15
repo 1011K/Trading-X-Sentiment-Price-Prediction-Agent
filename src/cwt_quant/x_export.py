@@ -1,4 +1,4 @@
-"""Import local, permissioned Apify X exports with explicit availability evidence."""
+"""Import local, permissioned X exports with explicit availability evidence."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import tempfile
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pandas as pd
 
@@ -20,6 +21,7 @@ from .calendar import ET
 from .exceptions import DataError, ProvenanceError
 
 _SOURCE = "apify_x_export"
+_ARCHIVE_SOURCE = "authorized_x_archive"
 ACTOR_NAME = "apidojo/tweet-scraper"
 _MAX_API_RESPONSE_BYTES = 32 * 1024 * 1024
 _MAX_EXPORT_RESPONSE_BYTES = 128 * 1024 * 1024
@@ -33,7 +35,7 @@ _COUNTS = {
     "views": ("viewCount", "views", "view_count"),
 }
 _COLUMNS = [
-    "post_id", "author", "text", "has_cashtag", "source", "created_at", "observed_at",
+    "post_id", "author", "text", "has_cashtag", "relevance_basis", "source", "created_at", "observed_at",
     "acquired_at", "engagement_asof", "followers_asof", *_COUNTS,
 ]
 _SYMBOL = re.compile(r"[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*", re.ASCII)
@@ -121,8 +123,6 @@ def _manifest(payload: str, ticker: str, digest: str) -> tuple[dict, pd.Timestam
         raise ProvenanceError("X export manifest must be a JSON object")
     required = {
         "platform": "X",
-        "source_name": "Apify",
-        "acquisition_method": "authorized_local_export",
         "intended_asset": ticker,
         "intended_purpose": "research",
         "export_sha256": digest,
@@ -130,6 +130,24 @@ def _manifest(payload: str, ticker: str, digest: str) -> tuple[dict, pd.Timestam
     for key, expected in required.items():
         if manifest.get(key) != expected:
             raise ProvenanceError(f"X export manifest has missing or invalid {key}")
+    method = manifest.get("acquisition_method")
+    if method == "authorized_local_export" and manifest.get("source_name") == "Apify":
+        pass
+    elif method == "authorized_archive_export":
+        name = manifest.get("source_name")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9 ._-]{1,100}", name):
+            raise ProvenanceError("Archive manifest requires a publisher name")
+        try:
+            reference = urlsplit(manifest.get("source_url") or "")
+        except (AttributeError, ValueError):
+            raise ProvenanceError("Archive manifest requires a public source URL") from None
+        if (reference.scheme != "https" or not reference.hostname or reference.username
+                or reference.password or reference.query or reference.fragment):
+            raise ProvenanceError("Archive manifest requires a public source URL")
+        if "actor_run" in manifest or manifest.get("historical_text_point_in_time_verified") is not False:
+            raise ProvenanceError("A retrospective archive cannot attest historical observation or an Apify run")
+    else:
+        raise ProvenanceError("X export manifest has unsupported source provenance")
     if manifest.get("access_authorized") is not True:
         raise ProvenanceError("X export manifest must attest access_authorized as true")
     for key in ("rights_basis", "dataset_id"):
@@ -141,7 +159,7 @@ def _manifest(payload: str, ticker: str, digest: str) -> tuple[dict, pd.Timestam
         ):
             raise ProvenanceError(f"X export manifest requires a documented {key}")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", manifest["dataset_id"], re.ASCII):
-        raise ProvenanceError("X export manifest requires an Apify dataset ID")
+        raise ProvenanceError("X export manifest requires a stable dataset ID")
     if type(manifest.get("historical_text_point_in_time_verified")) is not bool:
         raise ProvenanceError("X export manifest requires a boolean historical text attestation")
     if type(manifest.get("row_count")) is not int or manifest["row_count"] < 0:
@@ -186,8 +204,25 @@ def _count(value: object, field: str) -> int | None:
     return value
 
 
+def _relevance(text: str, ticker: str, cashtag: re.Pattern) -> str | None:
+    text = re.sub(r"https?://\S+", "", text, flags=re.IGNORECASE)
+    if cashtag.search(text):
+        return "cashtag"
+    if ticker != "AAPL":
+        return None
+    if re.search(r"\bApple\s+(?:Inc\b|earnings\b|shares\b|dividend\b|buyback\b|guidance\b|stock\b)",
+                 text, re.IGNORECASE):
+        return "issuer_keyword"
+    symbol = r"(?<![\w$])AAPL(?![\w$]|[.-]\w)"
+    financial = r"\b(?:shares|stock|earnings|dividend|buyback|guidance|revenue|EPS|investors|price\s+target)\b"
+    for sentence in re.split(r"[!?\n]|\.\s", text):
+        if re.search(symbol, sentence) and re.search(financial, sentence, re.IGNORECASE):
+            return "ticker_context"
+    return None
+
+
 def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.DataFrame, dict]:
-    """Return explicit-cashtag posts and source metadata for a permissioned local export."""
+    """Return symbol-relevant posts and source metadata for a permissioned local export."""
     ticker = ticker.upper()
     if not _SYMBOL.fullmatch(ticker):
         raise DataError("X export requires a valid ticker")
@@ -199,6 +234,7 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         raise ProvenanceError("X export does not match the manifest row_count")
 
     attested = manifest["historical_text_point_in_time_verified"]
+    provenance = _ARCHIVE_SOURCE if manifest["acquisition_method"] == "authorized_archive_export" else _SOURCE
     run = _actor_run_provenance(manifest, acquired) if "actor_run" in manifest else None
     if run and attested:
         raise ProvenanceError("Apify actor output is retrospective and cannot attest historical observation")
@@ -218,7 +254,7 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         post_id = ids.pop()
         author = _identity(_field(
             row, "author.id", "author.id_str", "user.id", "authorId", "author_id",
-            "author.userName", "user.screen_name", "author",
+            "author.userName", "user.screen_name", "author", "account_id",
         ), "author ID or handle")
         body = _field(row, "fullText", "text", "full_text", "content")
         if not isinstance(body, str) or not body.strip():
@@ -232,9 +268,9 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         if run_finished is not None and created > run_finished:
             raise DataError("X export post was created after the actor run finished")
         counts = {name: _count(_field(row, *aliases), name) for name, aliases in _COUNTS.items()}
-        matched = bool(cashtag.search(body))
+        relevance = _relevance(body, ticker, cashtag)
         observed = pd.NaT
-        if matched and attested:
+        if relevance and attested:
             observed = _timestamp(
                 _field(row, "observed_at", "observed_at_utc"), "observed_at", ProvenanceError,
             )
@@ -245,10 +281,11 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
                 raise DataError("Conflicting records share an X post ID")
             continue
         seen[post_id] = row
-        if matched:
+        if relevance:
             posts.append({
-                "post_id": post_id, "author": author, "text": body, "has_cashtag": True,
-                "source": _SOURCE, "created_at": created, "observed_at": observed,
+                "post_id": post_id, "author": author, "text": body,
+                "has_cashtag": relevance == "cashtag", "relevance_basis": relevance,
+                "source": provenance, "created_at": created, "observed_at": observed,
                 "acquired_at": acquired, "engagement_asof": pd.NaT,
                 "followers_asof": pd.NaT, **counts,
             })
@@ -259,7 +296,7 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         frame[col] = pd.array([row[col] for row in posts], dtype="UInt64")
     frame = frame.sort_values(["created_at", "post_id"]).reset_index(drop=True)
     meta = {
-        "provenance": _SOURCE,
+        "provenance": provenance,
         "source_hash": export_hash,
         "export_sha256": export_hash,
         "manifest_sha256": manifest_hash,
@@ -269,10 +306,14 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         "raw_rows": len(items),
         "deduplicated_rows": len(seen),
         "matched_rows": len(frame),
+        "relevance_counts": {str(key): int(n) for key, n in frame["relevance_basis"].value_counts().items()},
         "historical_eligible": attested and not frame.empty,
         "historical_engagement_verified": False,
         "coverage_independently_verified": False,
     }
+    if provenance == _ARCHIVE_SOURCE:
+        meta["source_name"] = manifest["source_name"]
+        meta["source_url"] = manifest["source_url"]
     if run:
         meta["actor_run"] = run
     pages = manifest.get("dataset_pages")
