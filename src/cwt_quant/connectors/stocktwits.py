@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import pandas as pd
-import requests
 
 from ..exceptions import DataError
 from ..logging_utils import get_logger
@@ -34,6 +33,11 @@ def fetch_stocktwits_messages(
         post_id, created_at, author, body, is_reply, likes, replies,
         sentiment_label, source
     """
+    try:
+        import requests
+    except ImportError as exc:
+        raise DataError("Install requirements-real.txt to enable StockTwits HTTP fetching") from exc
+
     ticker = ticker.upper().strip()
     all_msgs: List[dict] = []
     cursor_max: Optional[int] = None
