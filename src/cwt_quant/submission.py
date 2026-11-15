@@ -19,9 +19,11 @@ from .config import Config
 from .data import _empty_posts_schema
 from .exceptions import CWTQuantError, DataError
 from .metrics import forecast_metrics, trading_summary
+from .nowcast import open_nowcasts
 from .pipeline import run_pipeline
 from .replay_prices import capture_prices, evaluation_bounds, load_prices
 from .replay_store import store_run
+from .x_analysis import chart_sentiment, sentiment_series, summarize_sentiment
 
 
 def _forecast_rows(result: dict) -> pd.DataFrame:
@@ -41,6 +43,7 @@ def _forecast_rows(result: dict) -> pd.DataFrame:
         target_dates.append(cal.next_trading_day(target_dates[-1]))
     forecasts["target_session"] = forecasts["horizon"].map(dict(enumerate(target_dates)))
     forecasts["kind"] = forecasts["horizon"].map(lambda h: "observed" if h == 0 else "forecast")
+    forecasts["is_prediction"] = forecasts["horizon"].gt(0)
     return forecasts.sort_values(["horizon", "model"]).reset_index(drop=True)
 
 
@@ -71,7 +74,7 @@ def _chart(path: Path, panel: pd.DataFrame, comparisons: pd.DataFrame, start: da
 
 
 def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
-                   comparison: pd.DataFrame, risk: dict) -> None:
+                   comparison: pd.DataFrame, risk: dict, nowcasts: pd.DataFrame) -> None:
     ticker = manifest["ticker"]
     start, end = manifest["evaluation_start"], manifest["evaluation_end"]
     observed = forecasts.iloc[0]
@@ -79,15 +82,34 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
     x_status = manifest["historical_x_status"]
     outlook = [
         f"# {ticker} one-page outlook", "",
-        f"**As of {end}, exchange close.** Observed n+0 close was **USD {observed.forecast_close:.2f}**.",
+        f"**{end} observed close: USD {observed.forecast_close:.2f}.**",
         "", f"**Historical X signal: {x_status}.** {manifest['historical_x_note']}",
     ]
+    summary = manifest["sentiment_outlook"]
+    outlook.extend(["", f"**X sentiment window: {summary['start']} to {summary['end']} (New York).**"])
+    for label, name in (("strict", "Time-eligible text"), ("retrospective", "Retrospective text")):
+        sample = summary[label]
+        if sample["posts"]:
+            outlook.append(
+                f"- {name}: {sample['lexical_direction']}, mean {sample['mean']:.3f} over {sample['posts']} posts."
+            )
+        else:
+            outlook.append(f"- {name}: WITHHELD. No eligible observations.")
+    outlook.append("Retrospective text scores describe the captured sample and are excluded from forecasting.")
+    latest_nowcasts = nowcasts.loc[nowcasts["target_session"].eq(date.fromisoformat(end))]
+    if not latest_nowcasts.empty:
+        nowcast = latest_nowcasts.set_index("model").loc["price_only"]
+        outlook.extend([
+            "", f"**n+0 opening nowcast (09:30 New York): USD {nowcast.forecast_close:.2f}.** "
+            "Price-only Ridge estimates the same-day close from the opening print and earlier prices.",
+        ])
     news = manifest["current_news"]
     if news.get("headlines"):
         outlook.extend(["", f"**Current news context from Tavily.** Retrieved {news['collected_at_utc']}."])
-        for item in news["headlines"]:
+        for item in news.get("articles") or news["headlines"]:
             title = escape(item["title"]).replace("[", "\\[").replace("]", "\\]")
-            outlook.append(f"- [{title}](<{item['url']}>)")
+            date_text = item.get("published_at_utc") or item.get("published_date") or "date unavailable"
+            outlook.append(f"- [{title}](<{item['url']}>) ({date_text})")
     else:
         outlook.extend(["", "**Recent news: WITHHELD.** " + news["note"]])
     outlook.extend([
@@ -119,8 +141,12 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
         f"- {source['policy']}. Dividends and split fields were retained for review.",
         "- Provider data is a retrospective snapshot. Original per-session feed release times and data revisions were not independently verified.",
         f"- Historical X status is **{x_status}**. {manifest['historical_x_note']}",
+        f"- X coverage counted {manifest['x_export_rows_for_ticker']} symbol-matched export rows "
+        f"and {manifest['x_eligible_rows']} rows eligible for historical model input across the replay.",
+        "- Retrospective lexical text is described separately from the strict historical feature series.",
         "- No news observations were joined to historical features.",
-        "- Post-close forecasts use direct n+1…n+5 price log returns. n+0 is the observed close.",
+        "- Post-close forecasts use direct n+1…n+5 price log returns. The separate n+0 nowcast "
+        "uses the opening print and prior-session features to forecast the same-day close.",
         "- Expanding Ridge uses fixed alpha 10, a train-only scaler, and only labels observable by each forecast origin.",
         "", "## Matched walk-forward metrics", "",
         "MAE and RMSE use log returns. Direction is evaluated only where a model issues a nonzero call.",
@@ -132,6 +158,14 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
             f"| {row.model} | {row.horizon} | {row.n} | {row.mae:.5f} | "
             f"{row.rmse:.5f} | {_markdown_value(row.direction_accuracy)} |"
         )
+    report.extend([
+        "", "## Opening nowcast", "",
+        "These rows use an opening-time origin and open-to-close log returns. "
+        "They are evaluated separately from post-close predictions and excluded from the trading ledger.",
+        "", "| Model | Origins | MAE | RMSE |", "| --- | ---: | ---: | ---: |",
+    ])
+    for model, metrics in manifest["open_nowcast_metrics"].items():
+        report.append(f"| {model} | {metrics['n']} | {metrics['mae']:.5f} | {metrics['rmse']:.5f} |")
     report.extend([
         "", "## Hypothetical execution and risk", "",
         "Each positive n+1 signal places a next-session open-to-close long position. "
@@ -163,9 +197,14 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     from . import __version__
     from .backtest import trading_diagnostic
     from .metrics import matched_predictions
+    from .x_export import coverage_audit
 
     prices, price_source = load_prices(price_path, ticker, end)
     warmup, start = evaluation_bounds(end)
+    if current_news and current_news.get("source") == "Tavily":
+        from .connectors.tavily import validate_news_context
+        current_news = validate_news_context(current_news, ticker)
+        current_news["note"] = "No usable headlines were returned."
     posts, x_source = _empty_posts_schema(), {}
     if x_path is not None and x_manifest is not None:
         from .x_export import load_x_export
@@ -181,7 +220,22 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     with TemporaryDirectory(prefix="cwt-replay-") as scratch:
         result = run_pipeline(cfg, force_synthetic=False, out_dir=Path(scratch),
                               inputs=(prices, usable_posts, meta), evaluation_start=start)
+    strict_posts = result["post_features"]
+    if not strict_posts.empty:
+        strict_posts = strict_posts.loc[strict_posts["session_date"].isin(prices["session_date"])]
+        result["post_features"] = strict_posts
     forecasts = _forecast_rows(result)
+    nowcasts = open_nowcasts(prices, cfg, start)
+    nowcast_metrics = {
+        model: {k: v for k, v in forecast_metrics(group).items() if k in {"n", "mae", "rmse"}}
+        for model, group in nowcasts.groupby("model")
+    }
+    series = sentiment_series(result["panel"], posts, strict_posts, start, end)
+    coverage = coverage_audit(posts, start, end, x_source)
+    coverage["strict_eligible_by_session"] = [
+        {"date": str(row.session_date), "posts": int(row.strict_posts)}
+        for row in series.itertuples()
+    ]
     active = {k: v for k, v in result["predictions"].items() if not v.empty}
     comparisons = matched_predictions(active)
     if not {"no_change", "price_only"} <= comparisons.keys() or any(
@@ -202,11 +256,12 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
         except DataError as exc:
             trades[model] = pd.DataFrame()
             trades[model].attrs["withheld_reason"] = str(exc)
-        risk[model] = trading_summary(trades[model])
+        risk[model] = trading_summary(trades[model],
+                                      roundtrip_cost_bps=trade_cfg.diagnostic_roundtrip_cost_bps)
 
     x_available = "price_sentiment" in comparisons
     if x_available:
-        note = "Authorized and time-eligible X text met the matched walk-forward coverage gates."
+        note = "Source-attested X observations met the cutoff and matched walk-forward sample gates."
     elif x_source:
         note = "The supplied X export lacked verified historical availability or enough eligible coverage."
     else:
@@ -221,7 +276,12 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
         "first_oos_origin": origins.min().isoformat(), "last_oos_origin": origins.max().isoformat(),
         "prices": price_source, "historical_x_status": "AVAILABLE" if x_available else "WITHHELD",
         "historical_x_note": note, "x_export_rows_for_ticker": len(posts),
-        "x_eligible_rows": len(result["post_features"]),
+        "x_eligible_rows": len(strict_posts),
+        "x_evaluation_eligible_rows": int(series["strict_posts"].sum()),
+        "x_in_window_posts": coverage["in_window_posts"],
+        "observed_close": float(prices.iloc[-1]["close"]),
+        "sentiment_outlook": summarize_sentiment(series, end),
+        "open_nowcast_metrics": nowcast_metrics,
         "current_news": current_news or {"note": "No current news source was enabled."},
         "risk": risk,
     }
@@ -234,14 +294,24 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     manifest["x_source"] = x_source
     out.mkdir(parents=True, exist_ok=True)
     store_run(out / "replay.sqlite3", run_id, manifest, prices, posts, result,
-              forecasts, comparisons, trades)
+              forecasts, comparisons, trades, nowcasts=nowcasts)
     forecasts.to_csv(out / "forecasts.csv", index=False)
+    forecasts.loc[forecasts["is_prediction"]].to_csv(out / "post-close-forecasts.csv", index=False)
+    nowcasts.to_csv(out / "open-nowcast.csv", index=False)
+    series.to_csv(out / "x-sentiment-series.csv")
+    (out / "x-coverage.json").write_text(json.dumps(coverage, indent=2, allow_nan=False) + "\n")
+    news_snapshot = out / "tavily-news.json"
+    if current_news and current_news.get("source") == "Tavily":
+        news_snapshot.write_text(json.dumps(current_news, indent=2, allow_nan=False) + "\n")
+    else:
+        news_snapshot.unlink(missing_ok=True)
     comparison.to_csv(out / "model_comparison.csv", index=False)
     trade_rows = [frame.assign(model=model) for model, frame in trades.items() if not frame.empty]
     ledger = pd.concat(trade_rows, ignore_index=True) if trade_rows else pd.DataFrame(columns=["model"])
     ledger.to_csv(out / "trade_ledger.csv", index=False)
     _chart(out / "price-and-models.png", result["panel"], comparison, start)
-    _write_reports(out, manifest, forecasts, comparison, risk)
+    chart_sentiment(out / "x-versus-price.png", result["panel"], series)
+    _write_reports(out, manifest, forecasts, comparison, risk, nowcasts)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n")
     return manifest
 
@@ -257,13 +327,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--x-export", type=Path)
     parser.add_argument("--x-manifest", type=Path)
     parser.add_argument("--fetch-prices", action="store_true")
-    parser.add_argument("--tavily-news", action="store_true", help="Fetch current context outside the historical replay")
+    news_selection = parser.add_mutually_exclusive_group()
+    news_selection.add_argument("--tavily-news", action="store_true",
+                                help="Fetch current context outside the historical replay")
+    news_selection.add_argument("--news-snapshot", type=Path, help="Replay a saved local Tavily capture")
     args = parser.parse_args(argv)
     tickers = [ticker.strip().upper() for ticker in (args.tickers or [args.ticker or "AAPL"])]
     if len(set(tickers)) != len(tickers) or any(not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", t) for t in tickers):
         parser.error("Provide unique provider symbols for supported USD exchange-listed equities or ETFs")
     if bool(args.x_export) != bool(args.x_manifest) or (args.x_export and len(tickers) != 1):
         parser.error("Provide both X files for a single ticker")
+    if args.news_snapshot and len(tickers) != 1:
+        parser.error("A saved Tavily capture must match one ticker")
     failed = False
     for ticker in tickers:
         try:
@@ -275,7 +350,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.fetch_prices and not path.exists():
                 capture_prices(path, ticker, args.end)
             news = None
-            if args.tavily_news:
+            if args.news_snapshot:
+                from .connectors.tavily import validate_news_context
+                news = validate_news_context(json.loads(args.news_snapshot.read_bytes()), ticker)
+            elif args.tavily_news:
                 from .connectors.tavily import fetch_news_context
                 try:
                     news = fetch_news_context(ticker)

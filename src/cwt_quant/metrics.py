@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from math import isclose, isfinite
 from typing import Dict
 
 import numpy as np
 import pandas as pd
 
+from .calendar import XNYSCalendar
+from .config import Config
 from .exceptions import DataError
 
 
@@ -74,8 +77,76 @@ def matched_predictions(predictions: dict[str, pd.DataFrame]) -> dict[str, pd.Da
     return aligned
 
 
-def trading_summary(trades: pd.DataFrame) -> Dict[str, float | str]:
-    """Summarize chronological session returns, cash included in risk measures."""
+def _reconcile_daily_ledger(trades: pd.DataFrame, roundtrip_cost_bps: float) -> tuple[np.ndarray, ...]:
+    required = {
+        "origin", "horizon", "y_hat", "fill_date", "session_open", "session_close",
+        "open_price", "close_price", "entry_at", "exit_at", "entry_price", "exit_price",
+        "signal", "position", "raw_oc_ret", "gross_ret", "cost", "cash_ret", "net_ret", "equity",
+    }
+    if not trades.columns.is_unique or not required.issubset(trades):
+        raise DataError("Trading ledger lacks unique daily fill and accounting fields")
+    cost = float(roundtrip_cost_bps) / 10_000.0
+    if not isfinite(cost) or cost < 0:
+        raise DataError("Trading cost must be finite and nonnegative")
+
+    cal = XNYSCalendar()
+    previous_fill = None
+    returns, positions, equity = [], [], [1.0]
+    for row in trades.itertuples(index=False):
+        origin = pd.Timestamp(row.origin)
+        if pd.isna(origin) or origin.tzinfo is None or float(row.horizon) != 1:
+            raise DataError("Trading ledger requires timezone-aware one-session signals")
+        origin_day = origin.tz_convert(cal.tz).date()
+        fill_day = cal.next_trading_day(origin_day)
+        session_open = cal.session_open_dt(fill_day)
+        session_close = cal.session_close_dt(fill_day)
+        if (
+            origin != cal.session_close_dt(origin_day)
+            or (previous_fill is not None and previous_fill != origin_day)
+            or str(row.fill_date) != fill_day.isoformat()
+            or pd.Timestamp(row.session_open) != session_open
+            or pd.Timestamp(row.session_close) != session_close
+        ):
+            raise DataError("Trading ledger is not a contiguous chronological next-session series")
+
+        open_price, close_price, forecast = map(float, (row.open_price, row.close_price, row.y_hat))
+        if not all(map(isfinite, (open_price, close_price, forecast))) or min(open_price, close_price) <= 0:
+            raise DataError("Trading ledger has invalid prices or forecast")
+        position = int(forecast > 0)
+        if float(row.signal) != position or float(row.position) != position:
+            raise DataError("Trading position does not reconcile with the forecast")
+        if position:
+            if (
+                pd.Timestamp(row.entry_at) != session_open or pd.Timestamp(row.exit_at) != session_close
+                or float(row.entry_price) != open_price or float(row.exit_price) != close_price
+            ):
+                raise DataError("Long-position fills do not reconcile with session prices and times")
+        elif any(pd.notna(value) for value in (row.entry_at, row.exit_at, row.entry_price, row.exit_price)):
+            raise DataError("Cash sessions must have no executed fills")
+
+        raw_return = close_price / open_price - 1.0
+        gross_return = raw_return if position else 0.0
+        charged_cost = cost if position else 0.0
+        net_return = gross_return - charged_cost
+        balance = equity[-1] * (1.0 + net_return)
+        expected = (raw_return, gross_return, charged_cost, 0.0, net_return, balance)
+        actual = (row.raw_oc_ret, row.gross_ret, row.cost, row.cash_ret, row.net_ret, row.equity)
+        if balance <= 0 or any(
+            not isfinite(value) or not isclose(float(observed), value, rel_tol=1e-12, abs_tol=1e-14)
+            for observed, value in zip(actual, expected)
+        ):
+            raise DataError("Trading ledger returns, costs, cash, or equity do not reconcile")
+        returns.append(net_return)
+        positions.append(position)
+        equity.append(balance)
+        previous_fill = fill_day
+    return np.array(returns), np.array(positions), np.array(equity)
+
+
+def trading_summary(
+    trades: pd.DataFrame, *, roundtrip_cost_bps: float | None = None,
+) -> Dict[str, float | str]:
+    """Summarize reconciled XNYS session returns, including cash periods."""
     result = {
         "n_sessions": 0,
         "n_trades": 0,
@@ -91,11 +162,17 @@ def trading_summary(trades: pd.DataFrame) -> Dict[str, float | str]:
         result["withheld_reason"] = trades.attrs.get("withheld_reason", "No eligible daily sessions")
         return result
 
-    rets = trades["net_ret"].to_numpy(dtype=float)
-    positions = trades["position"].to_numpy()
-    equity = np.r_[1.0, trades["equity"].to_numpy(dtype=float)]
-    if not np.isfinite(rets).all() or not np.isfinite(equity).all() or (equity <= 0).any():
-        result["withheld_reason"] = "Invalid session return or equity"
+    cost = (
+        trades.attrs.get("roundtrip_cost_bps", Config.diagnostic_roundtrip_cost_bps)
+        if roundtrip_cost_bps is None else roundtrip_cost_bps
+    )
+    try:
+        rets, positions, equity = _reconcile_daily_ledger(trades, cost)
+    except DataError as exc:
+        result["withheld_reason"] = str(exc)
+        return result
+    except (ValueError, TypeError, OverflowError):
+        result["withheld_reason"] = "Trading ledger contains a malformed timestamp or number"
         return result
 
     active = positions == 1

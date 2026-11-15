@@ -11,14 +11,18 @@ import os
 import re
 import tempfile
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
 
+from .calendar import ET
 from .exceptions import DataError, ProvenanceError
 
 _SOURCE = "apify_x_export"
+ACTOR_NAME = "apidojo/tweet-scraper"
+_MAX_API_RESPONSE_BYTES = 32 * 1024 * 1024
+_MAX_EXPORT_RESPONSE_BYTES = 128 * 1024 * 1024
 _COUNTS = {
     "followers": (
         "author.followers", "author.followersCount", "user.followers_count", "authorFollowers", "followers"
@@ -140,21 +144,28 @@ def _manifest(payload: str, ticker: str, digest: str) -> tuple[dict, pd.Timestam
         raise ProvenanceError("X export manifest requires an Apify dataset ID")
     if type(manifest.get("historical_text_point_in_time_verified")) is not bool:
         raise ProvenanceError("X export manifest requires a boolean historical text attestation")
-    if type(manifest.get("row_count")) is not int:
-        raise ProvenanceError("X export manifest requires an integer raw row_count")
-    return manifest, _timestamp(manifest.get("retrieved_at_utc"), "retrieved_at_utc", ProvenanceError)
+    if type(manifest.get("row_count")) is not int or manifest["row_count"] < 0:
+        raise ProvenanceError("X export manifest requires a nonnegative integer raw row_count")
+    acquired = _timestamp(manifest.get("retrieved_at_utc"), "retrieved_at_utc", ProvenanceError)
+    if acquired > pd.Timestamp.now(tz="UTC"):
+        raise ProvenanceError("X export retrieval time is in the future")
+    return manifest, acquired
 
 
-def _field(row: dict, *aliases: str):
+def _values(row: dict, *aliases: str):
     for alias in aliases:
         if alias in row and row[alias] not in (None, ""):
-            return row[alias]
+            yield row[alias]
+            continue
         value = row
         for part in alias.split("."):
             value = value.get(part) if isinstance(value, dict) else None
         if value not in (None, ""):
-            return value
-    return None
+            yield value
+
+
+def _field(row: dict, *aliases: str):
+    return next(_values(row, *aliases), None)
 
 
 def _identity(value: object, field: str) -> str:
@@ -188,11 +199,23 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         raise ProvenanceError("X export does not match the manifest row_count")
 
     attested = manifest["historical_text_point_in_time_verified"]
+    run = _actor_run_provenance(manifest, acquired) if "actor_run" in manifest else None
+    if run and attested:
+        raise ProvenanceError("Apify actor output is retrospective and cannot attest historical observation")
+    run_finished = pd.Timestamp(run["finished_at_utc"]) if run else None
     cashtag = re.compile(rf"(?<![\w$])\${re.escape(ticker)}(?![\w$]|[.-][\w])", re.IGNORECASE)
     seen: dict[str, dict] = {}
     posts: list[dict] = []
     for row in items:
-        post_id = _identity(_field(row, "id", "tweetId", "tweet_id", "post_id", "id_str"), "post ID")
+        ids = {
+            _identity(value, "post ID")
+            for value in _values(row, "id", "tweetId", "tweet_id", "post_id", "id_str")
+        }
+        if not ids:
+            raise DataError("X export row requires a valid post ID")
+        if len(ids) != 1:
+            raise DataError("X export row has conflicting post ID aliases")
+        post_id = ids.pop()
         author = _identity(_field(
             row, "author.id", "author.id_str", "user.id", "authorId", "author_id",
             "author.userName", "user.screen_name", "author",
@@ -206,6 +229,8 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         )
         if created > acquired:
             raise DataError("X export post was created after retrieval")
+        if run_finished is not None and created > run_finished:
+            raise DataError("X export post was created after the actor run finished")
         counts = {name: _count(_field(row, *aliases), name) for name, aliases in _COUNTS.items()}
         matched = bool(cashtag.search(body))
         observed = pd.NaT
@@ -248,8 +273,163 @@ def load_x_export(path: Path, manifest_path: Path, ticker: str) -> tuple[pd.Data
         "historical_engagement_verified": False,
         "coverage_independently_verified": False,
     }
+    if run:
+        meta["actor_run"] = run
+    pages = manifest.get("dataset_pages")
+    if pages is not None:
+        if type(pages) is not int or not 1 <= pages <= max(1, len(items)):
+            raise ProvenanceError("X export has invalid dataset page count")
+        meta["dataset_pages"] = pages
     frame.attrs.update(meta)
     return frame, meta
+
+
+def _actor_run_provenance(manifest: dict, acquired: pd.Timestamp) -> dict:
+    run = manifest["actor_run"]
+    if not isinstance(run, dict) or run.get("actor_name") != ACTOR_NAME:
+        raise ProvenanceError("X export has unsupported actor run provenance")
+    keys = ("actor_id", "run_id", "build_id", "dataset_id")
+    if any(not isinstance(run.get(key), str) or not re.fullmatch(r"[A-Za-z0-9_-]+", run[key])
+           for key in keys):
+        raise ProvenanceError("X export has invalid actor run identifiers")
+    if run["dataset_id"] != manifest["dataset_id"]:
+        raise ProvenanceError("Actor run dataset does not match the X export")
+    started = _timestamp(run.get("started_at_utc"), "actor started_at", ProvenanceError)
+    finished = _timestamp(run.get("finished_at_utc"), "actor finished_at", ProvenanceError)
+    if not started <= finished <= acquired:
+        raise ProvenanceError("X export has inconsistent actor run timing")
+    date_keys = ("query_start_date", "query_end_date")
+    try:
+        start, end = (date.fromisoformat(run.get(key)) for key in date_keys)
+    except (ValueError, TypeError):
+        raise ProvenanceError("X export has invalid actor query dates") from None
+    if [start.isoformat(), end.isoformat()] != [run[key] for key in date_keys]:
+        raise ProvenanceError("X export actor query dates must use YYYY-MM-DD")
+    if end >= started.date() or started < _evaluation_cutoff(end):
+        raise ProvenanceError("The Apify actor run must begin after the search window ended")
+    end_exclusive = (end + timedelta(days=2)).isoformat()
+    if (end - start).days != 179:
+        raise ProvenanceError("X export actor query plan does not match the declared 180-day window")
+    terms = run.get("search_terms")
+    keyword = _query_keyword(run.get("keyword"), ProvenanceError)
+    planned = _query_terms(manifest["intended_asset"], start, keyword)
+    if terms != planned or run.get("sort") != "Latest":
+        raise ProvenanceError("X export actor query plan does not match the declared 180-day window")
+    if type(run.get("max_items")) is not int or run["max_items"] < 50:
+        raise ProvenanceError("X export has invalid actor item limit")
+    return {
+        "actor_name": ACTOR_NAME, **{key: run[key] for key in (*keys, *date_keys)},
+        "started_at_utc": started.isoformat(), "finished_at_utc": finished.isoformat(),
+        "search_terms": planned, "query_timezone": "UTC", "query_end_utc_exclusive": end_exclusive,
+        "sort": "Latest", "keyword": keyword,
+        "max_items": run["max_items"], "item_cap_reached": manifest["row_count"] >= run["max_items"],
+        "api_readback_claim_is_manifest_declared": True,
+    }
+
+
+def _evaluation_cutoff(end: date) -> datetime:
+    return datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=ET)
+
+
+def _query_keyword(keyword: object, error: type[Exception]) -> str | None:
+    if keyword is None:
+        return None
+    if not isinstance(keyword, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .,&'-]{0,59}", keyword):
+        raise error("Actor keyword must be a plain company name or search phrase")
+    return keyword.strip()
+
+
+def _query_terms(ticker: str, start: date, keyword: str | None = None) -> list[str]:
+    alternatives = [f"${ticker}", ticker]
+    if keyword is not None:
+        alternatives.append(f'"{keyword}"')
+    subject = " OR ".join(alternatives)
+    bounds = [start + timedelta(days=45 * index) for index in range(5)]
+    # The last New York day extends into the next UTC day.
+    bounds[-1] += timedelta(days=1)
+    return [
+        f"({subject}) since:{left} until:{right} -filter:retweets"
+        for left, right in zip(bounds, bounds[1:])
+    ]
+
+
+def coverage_audit(posts: pd.DataFrame, start: date, end: date, source: dict | None = None) -> dict:
+    """Count matching posts across UTC and New York dates without asserting corpus completeness."""
+    if end < start:
+        raise DataError("X coverage dates must be in chronological order")
+    source = source or {}
+    run = source.get("actor_run") or {}
+    if posts.empty:
+        ny_days = utc_days = timestamped_days = pd.Series(dtype="int64")
+    else:
+        created = posts["created_at"]
+        ny = created.dt.tz_convert(ET).dt.date
+        ny_days = ny.value_counts()
+        utc_days = created.dt.tz_convert("UTC").dt.date.value_counts()
+        timestamped_days = ny[posts["observed_at"].notna()].value_counts()
+    daily = [
+        {
+            "date": day.isoformat(),
+            "posts": int(ny_days.get(day, 0)),
+            "utc_posts": int(utc_days.get(day, 0)),
+            "pit_timestamped_posts": int(timestamped_days.get(day, 0)),
+        }
+        for day in pd.date_range(start, end).date
+    ]
+    in_window = sum(row["posts"] for row in daily)
+    in_window_utc = sum(row["utc_posts"] for row in daily)
+    covered_days = sum(row["posts"] > 0 for row in daily)
+    return {
+        "start_date": start.isoformat(), "end_date": end.isoformat(),
+        "calendar_days": len(daily), "primary_timezone": str(ET),
+        "raw_rows": source.get("raw_rows", len(posts)),
+        "deduplicated_rows": source.get("deduplicated_rows", len(posts)),
+        "unmatched_rows": source.get("deduplicated_rows", len(posts)) - len(posts),
+        "matched_posts": len(posts), "in_window_posts": in_window,
+        "outside_window_posts": len(posts) - in_window,
+        "utc_in_window_posts": in_window_utc,
+        "utc_outside_window_posts": len(posts) - in_window_utc,
+        "pit_timestamped_posts": sum(row["pit_timestamped_posts"] for row in daily),
+        "days_with_posts": covered_days, "days_without_returned_posts": len(daily) - covered_days,
+        "actor_query_window_matches": (
+            run.get("query_start_date") == start.isoformat() and run.get("query_end_date") == end.isoformat()
+        ),
+        "actor_run": run or None, "coverage_independently_verified": False,
+        "note": (
+            "Counts use creation dates. A zero count means no matching row returned by the export. "
+            "Search visibility, query caps, time-zone edges and retrieval timing can affect coverage. "
+            "An observation timestamp still requires a separate forecast-cutoff check."
+        ),
+        "daily": daily,
+    }
+
+
+def _authorization() -> dict:
+    token = os.environ.get("APIFY_TOKEN", "").strip()
+    if not token or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+        raise ProvenanceError("Set APIFY_TOKEN locally before downloading an authorized dataset")
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+
+def _download_response(connection, path: str, headers: dict):
+    connection.request("GET", path, headers=headers)
+    response = connection.getresponse()
+    if response.status != 200:
+        raise DataError(f"Apify request returned HTTP {response.status}")
+    payload = response.read(_MAX_API_RESPONSE_BYTES + 1)
+    if len(payload) > _MAX_API_RESPONSE_BYTES:
+        raise DataError("Apify response exceeds the local byte limit")
+    return response, payload
+
+
+def _publish_new(path: Path, payload: bytes) -> None:
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent) as temporary:
+            temporary.write(payload)
+            temporary.flush()
+            os.link(temporary.name, path)
+    except OSError:
+        raise DataError("Unable to write the new local Apify export or manifest") from None
 
 
 def download_authorized_apify_dataset(
@@ -282,54 +462,51 @@ def download_authorized_apify_dataset(
     if type(max_items) is not int or max_items < 1:
         raise DataError("Download requires a positive integer max_items")
 
-    token = os.environ.get("APIFY_TOKEN", "").strip()
-    if not token or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
-        raise ProvenanceError("Set APIFY_TOKEN locally before downloading an authorized dataset")
-
+    headers = _authorization()
     items: list[dict] = []
     total = None
+    pages = 0
+    total_bytes = 0
     try:
         with closing(http.client.HTTPSConnection("api.apify.com", timeout=30)) as connection:
             while total is None or len(items) < total:
                 offset = len(items)
                 limit = min(1000, max_items - offset)
-                connection.request(
-                    "GET", f"/v2/datasets/{dataset_id}/items?format=json&offset={offset}&limit={limit}",
-                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                response, raw = _download_response(
+                    connection, f"/v2/datasets/{dataset_id}/items?format=json&offset={offset}&limit={limit}&desc=false",
+                    headers,
                 )
-                response = connection.getresponse()
-                if response.status != 200:
-                    raise DataError(f"Apify dataset request returned HTTP {response.status}")
-                batch = _items(response.read().decode("utf-8"), ".json")
+                total_bytes += len(raw)
+                if total_bytes > _MAX_EXPORT_RESPONSE_BYTES:
+                    raise DataError("Apify dataset exceeds the local byte limit")
+                batch = _items(raw.decode("utf-8"), ".json")
                 page_total = int(response.getheader("X-Apify-Pagination-Total"))
                 page_count = int(response.getheader("X-Apify-Pagination-Count"))
                 page_offset = int(response.getheader("X-Apify-Pagination-Offset"))
+                desc = response.getheader("X-Apify-Pagination-Desc")
                 if (
                     page_total > max_items
                     or (total is not None and page_total != total)
                     or page_offset != offset
                     or page_count != len(batch)
                     or page_count > limit
+                    or (desc is not None and desc.lower() not in {"0", "false"})
                     or page_total < offset + page_count
                     or (page_count == 0 and offset < page_total)
                 ):
                     raise DataError("Apify dataset pagination inconsistent or exceeds max_items")
                 total = page_total
                 items.extend(batch)
+                pages += 1
         payload = json.dumps(items, ensure_ascii=False, allow_nan=False).encode("utf-8")
     except (OSError, TypeError, ValueError, http.client.HTTPException):
         raise DataError("Unable to read the complete authorized Apify dataset") from None
 
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent) as temporary:
-            temporary.write(payload)
-            temporary.flush()
-            os.link(temporary.name, path)
-    except OSError:
-        raise DataError("Unable to write the new local Apify export") from None
+    _publish_new(path, payload)
     return {
         **manifest,
         "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
         "row_count": len(items),
+        "dataset_pages": pages,
         "export_sha256": hashlib.sha256(payload).hexdigest(),
     }

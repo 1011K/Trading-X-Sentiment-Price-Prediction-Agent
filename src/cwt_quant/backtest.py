@@ -241,4 +241,6 @@ def trading_diagnostic(
         )
         previous_fill = fill_date
 
-    return pd.DataFrame(records)
+    ledger = pd.DataFrame(records)
+    ledger.attrs["roundtrip_cost_bps"] = cfg.diagnostic_roundtrip_cost_bps
+    return ledger
