@@ -1,7 +1,7 @@
 """
 Data loading and synthetic fixture generation.
 
-All real-data paths are stubs. Synthetic path exercises every red-team case.
+Real-data mode uses optional connectors; synthetic mode exercises red-team fixtures.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .calendar import XNYSCalendar, ET
-from .config import Config
+from .config import Config, PACKAGE_VERSION
 from .exceptions import DataError, ProvenanceError
 from .logging_utils import get_logger
 
@@ -425,7 +425,7 @@ def write_manifest(meta: Dict[str, Any], cfg: Config, out_dir: Path) -> Path:
     payload = {
         "meta": meta,
         "config": cfg.to_dict(),
-        "package_version": "0.1.2-experimental",
+        "package_version": PACKAGE_VERSION,
         "status": "EXPERIMENTAL / INDEPENDENT CANDIDATE",
     }
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")

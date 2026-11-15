@@ -123,3 +123,12 @@ def test_optional_stocktwits_dependency_is_lazy_import(monkeypatch):
     importlib.reload(module)
     assert module.label_to_score('Bullish') == 1.0
     assert module.label_to_score('Bearish') == -1.0
+
+
+def test_manifest_version_matches_package_version(tmp_path):
+    import json
+    from cwt_quant import __version__
+    from cwt_quant.config import PACKAGE_VERSION
+    from cwt_quant.data import write_manifest
+    payload = json.loads(write_manifest({'mode': 'synthetic'}, Config(), tmp_path).read_text())
+    assert payload['package_version'] == PACKAGE_VERSION == __version__

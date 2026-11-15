@@ -4,10 +4,11 @@ CWT Quant — research-grade, leakage-safe daily equity + X-sentiment forecastin
 Status: EXPERIMENTAL / PRE-CODEX reference implementation.
 """
 
-__version__ = "0.1.1-experimental"
+from .config import Config, PACKAGE_VERSION
+
+__version__ = PACKAGE_VERSION
 __status__ = "EXPERIMENTAL / PRE-CODEX"
 
-from .config import Config
 from .calendar import XNYSCalendar
 from .pipeline import run_pipeline
 from .exceptions import (
