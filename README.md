@@ -37,6 +37,13 @@ Those contained conflicting assumptions (hourly Yahoo, BTC calendar, engagement 
 - Influence coverage gate messaging
 - Honest report includes warnings and adjustment policy
 
+## CI and source-integrity improvements
+
+- StockTwits HTTP access is an **optional** live-data dependency; offline regression tests do not require `requests`.
+- Raw StockTwits posts and news headlines are never altered to invent a cashtag. Current CWT aggregate scores cannot be backdated.
+- Offline CI checks Python 3.10 and 3.12, dependency consistency, and a synthetic CLI smoke run.
+- These checks protect reproducibility; **they are not an X-data backtest or proof of alpha**.
+
 ## Quick start (synthetic)
 
 ```bash

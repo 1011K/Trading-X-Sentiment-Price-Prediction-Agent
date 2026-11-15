@@ -18,7 +18,7 @@ PYTHONPATH=src python -m pytest -q tests
 PYTHONPATH=src python -m cwt_quant.cli --ticker TSLA --out outputs_demo
 ```
 
-Expected locally: **31 tests pass**, synthetic CLI report produced. Record Python version, dependency lock, timestamp and exact SHA. Do not claim that a real market replay was performed from these commands.
+Expected locally: **33 tests pass**, synthetic CLI report produced. Record Python version, dependency lock, timestamp and exact SHA. Do not claim that a real market replay was performed from these commands.
 
 ## Task 2: perform neutral import-vs-reimplement review
 

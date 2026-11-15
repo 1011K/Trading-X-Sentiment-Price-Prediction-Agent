@@ -1,7 +1,7 @@
 CWT Quant — Reproducibility / Local Validation
 ===============================================
 Date: 2026-11-15 (IST)
-Version: 0.1.2-experimental
+Version: 0.1.3-experimental
 Mode: SYNTHETIC TESTS; NOT A REAL X/PRICE REPLAY
 Runtime locally: CPython 3.13 (independent CI also targets 3.10 and 3.12; not executed here)
 
@@ -10,7 +10,7 @@ Commands:
   PYTHONPATH=src python -m cwt_quant.cli --ticker TSLA --out /mnt/data/cwt_release_smoke
 
 Observed:
-  - 31 local tests passed (invariant tests, CLI pipeline, external as-of gating,
+  - 33 local tests passed (invariant tests, CLI pipeline, external as-of gating,
     follower snapshot integrity, 2026 NYSE schedule, 3.10 AST syntax parse).
   - TSLA synthetic CLI completed, 128 synthetic sessions, 492 synthetic posts.
   - 405 walk-forward observations/model across five horizons (81 origins).
@@ -24,3 +24,6 @@ Notes:
   - Upstream live StockTwits endpoint availability not verified in this environment.
   - The limited 2024-2026 XNYS calendar is intentionally fail-closed beyond 2026.
   - Review project documentation before treating any results as market evidence.
+
+GitHub CI baseline: 6e325fd (2026-11-15), both 3.10 and 3.12 jobs succeeded.
+The v0.1.3 expanded 33-test matrix + synthetic CLI smoke requires its own CI verification.

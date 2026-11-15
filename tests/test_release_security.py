@@ -105,3 +105,21 @@ def test_no_retroactive_conversion_of_cwt_daily_score():
     from cwt_quant.exceptions import DataError
     with pytest.raises(DataError, match='cannot be backfilled'):
         score_to_daily_feature('AAPL', date(2026,11,13))
+
+def test_news_does_not_inject_fake_cashtag():
+    from cwt_quant.data import _map_news_to_posts
+    news = pd.DataFrame([{'published_at': pd.Timestamp('2026-11-13T12:00:00Z'),
+                          'source': 'Example News', 'title': 'Fresh apple harvest reported'}])
+    mapped = _map_news_to_posts(news, 'AAPL')
+    assert mapped['text'].iloc[0] == 'Fresh apple harvest reported'
+    assert not bool(mapped['has_cashtag'].iloc[0])
+
+
+def test_optional_stocktwits_dependency_is_lazy_import(monkeypatch):
+    import importlib
+    import sys
+    monkeypatch.setitem(sys.modules, 'requests', None)
+    import cwt_quant.connectors.stocktwits as module
+    importlib.reload(module)
+    assert module.label_to_score('Bullish') == 1.0
+    assert module.label_to_score('Bearish') == -1.0
