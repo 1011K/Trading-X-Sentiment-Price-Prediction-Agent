@@ -1,0 +1,15 @@
+{
+  "platform": "X",
+  "source_name": "REPLACE_WITH_REAL_PROVIDER_NAME",
+  "acquisition_method": "REPLACE_WITH_PERMISSIONED_EXPORT_OR_API",
+  "rights_basis": "REPLACE_WITH_DOCUMENTED_ACCESS_AUTHORIZATION_OR_LICENSE",
+  "access_authorized": false,
+  "retrieved_at_utc": "REPLACE_WITH_ACTUAL_UTC_TIMESTAMP",
+  "intended_asset": "AAPL",
+  "query_terms": ["$AAPL", "Apple earnings", "Apple shares"],
+  "pagination_complete": false,
+  "coverage_independently_verified": false,
+  "historical_text_point_in_time_verified": false,
+  "actor_id": null,
+  "dataset_id": null
+}
