@@ -32,8 +32,9 @@ def fetch_daily_ohlc(
         ) from exc
 
     cal = XNYSCalendar()
+    as_of = datetime.now(ET)
     if end is None:
-        end = date.today()
+        end = as_of.date()
     if start is None:
         # Exact inclusive calendar-day range. If a separate indicator warm-up
         # is needed, download it independently and exclude it from evaluation.
@@ -66,14 +67,18 @@ def fetch_daily_ohlc(
     date_col = "Date" if "Date" in raw.columns else "date"
     raw["session_date"] = pd.to_datetime(raw[date_col]).dt.date
 
-    # Keep only actual XNYS trading days
-    trading = set(cal.trading_days_between(start, end))
-    raw = raw[raw["session_date"].isin(trading)].copy()
+    # Yahoo can include a partial daily bar during the current session.
+    session_closes = {
+        day: cal.session_close_dt(day) for day in cal.trading_days_between(start, end)
+    }
+    raw["session_close"] = pd.to_datetime(
+        raw["session_date"].map(session_closes), utc=True
+    ).dt.tz_convert(ET)
+    raw = raw[raw["session_close"] <= as_of]
     if raw.empty:
-        raise DataError("No overlapping trading days after calendar filter")
+        raise DataError("No completed XNYS sessions in returned bars")
 
-    closes = [cal.session_close_dt(d) for d in raw["session_date"]]
-    idx = pd.DatetimeIndex(closes, name="session_close")
+    idx = pd.DatetimeIndex(raw["session_close"], name="session_close")
     df = pd.DataFrame(
         {
             "open": raw["open"].values,

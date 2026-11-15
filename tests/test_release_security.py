@@ -132,3 +132,102 @@ def test_manifest_version_matches_package_version(tmp_path):
     from cwt_quant.data import write_manifest
     payload = json.loads(write_manifest({'mode': 'synthetic'}, Config(), tmp_path).read_text())
     assert payload['package_version'] == PACKAGE_VERSION == __version__
+
+
+def test_newsapi_auth_stays_out_of_url_and_logs(monkeypatch, caplog):
+    import sys
+    from types import SimpleNamespace
+
+    from cwt_quant.connectors.news import fetch_news_headlines
+
+    dummy = 'dummy-news-credential'
+    request = {}
+
+    def fake_get(url, **options):
+        request.update(url=url, **options)
+        raise RuntimeError(f'Simulated provider failure containing {dummy}')
+
+    monkeypatch.setitem(sys.modules, 'requests', SimpleNamespace(get=fake_get))
+    monkeypatch.setenv('NEWSAPI_KEY', dummy)
+    assert fetch_news_headlines('AAPL').empty
+    assert dummy not in caplog.text
+    assert dummy not in request['url']
+    assert 'apiKey' not in request['params']
+    assert request['headers']['X-Api-Key'] == dummy
+    assert request['allow_redirects'] is False
+
+
+def test_live_social_rows_without_engagement_snapshots_are_valid():
+    from cwt_quant.data import _map_stocktwits_to_posts
+    from cwt_quant.validation import validate_posts
+
+    raw = pd.DataFrame([{
+        'post_id': '1',
+        'created_at': pd.Timestamp('2026-11-13T12:00:00Z'),
+        'body': '$AAPL bullish',
+    }])
+    posts = _map_stocktwits_to_posts(raw, 'AAPL')
+    assert posts['engagement_asof'].isna().all()
+    assert validate_posts(posts, Config(ticker='AAPL')) == []
+
+
+def test_future_posts_cannot_enable_earlier_sentiment_predictions(tmp_path, monkeypatch):
+    import cwt_quant.pipeline as pipe
+
+    cfg = Config(ticker='TSLA', min_posts_for_influence=35)
+    prices = generate_synthetic_prices(cfg, XNYSCalendar(), n_sessions=130)
+
+    def post_rows(indexes):
+        rows = []
+        for i in indexes:
+            ts = prices.index[i] - timedelta(hours=2)
+            rows.append(_test_post(
+                post_id=str(i), created_at=ts, observed_at=ts,
+                followers_asof=ts, engagement_asof=ts,
+            ))
+        return pd.concat(rows, ignore_index=True)
+
+    early_posts = post_rows(range(9))
+    late_posts = post_rows(range(90, 120))
+
+    def run(posts, name):
+        monkeypatch.setattr(pipe, 'load_or_generate', lambda *args, **kwargs: (
+            prices, posts, {'mode': 'real', 'warnings': []},
+        ))
+        return run_pipeline(cfg, force_synthetic=False, out_dir=tmp_path / name)
+
+    before = run(early_posts, 'before')
+    after = run(pd.concat([early_posts, late_posts], ignore_index=True), 'after')
+    cutoff = prices.index[90]
+    pd.testing.assert_frame_equal(before['panel'].loc[before['panel'].index < cutoff],
+                                  after['panel'].loc[after['panel'].index < cutoff])
+    assert 'price_sentiment' not in before['predictions']
+    assert 'price_influence' not in before['predictions']
+    predictions = after['predictions']['price_sentiment']
+    assert not predictions.empty
+    # Nine early sessions plus eleven late sessions meet the 20-session gate,
+    # but the 30-post minimum is first met on the 21st late session.
+    assert predictions['origin'].min() == prices.index[110]
+    assert after['predictions']['price_influence']['origin'].min() == prices.index[115]
+
+
+def test_yahoo_intraday_daily_bar_is_excluded(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from cwt_quant.connectors import prices
+
+    class MarketClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 13, 13, tzinfo=ET).astimezone(tz)
+
+    rows = pd.DataFrame(
+        {'Open': [100, 101], 'High': [103, 104], 'Low': [99, 100],
+         'Close': [101, 103], 'Volume': [1000, 500]},
+        index=pd.DatetimeIndex(['2026-11-12', '2026-11-13'], name='Date'),
+    )
+    monkeypatch.setattr(prices, 'datetime', MarketClock)
+    monkeypatch.setitem(sys.modules, 'yfinance', SimpleNamespace(download=lambda *a, **kw: rows))
+    bars = prices.fetch_daily_ohlc('AAPL', start=date(2026, 11, 12), end=date(2026, 11, 13))
+    assert list(bars['session_date']) == [date(2026, 11, 12)]

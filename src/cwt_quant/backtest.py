@@ -4,11 +4,13 @@ Leakage-safe walk-forward evaluation.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 
+from .calendar import XNYSCalendar
 from .config import Config
 from .exceptions import DataError, LeakageError
 from .logging_utils import get_logger
@@ -23,6 +25,7 @@ def walk_forward(
     cfg: Config,
     enable_influence: bool = False,
     enable_sentiment: bool = True,
+    model_start_dates: dict[str, date] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Expanding-window walk-forward.
@@ -35,6 +38,7 @@ def walk_forward(
         raise DataError("Cannot run walk-forward on empty panel")
 
     feature_sets = get_feature_sets(cfg)
+    model_start_dates = model_start_dates or {}
     if not enable_sentiment:
         feature_sets.pop("price_sentiment", None)
     if not enable_influence:
@@ -99,6 +103,9 @@ def walk_forward(
             )
 
             for name, feats in feature_sets.items():
+                start_date = model_start_dates.get(name)
+                if start_date is not None and t.date() < start_date:
+                    continue
                 usable = [
                     f for f in feats
                     if f in train.columns and train[f].notna().any()
@@ -145,46 +152,93 @@ def trading_diagnostic(
     panel: pd.DataFrame,
     cfg: Config,
 ) -> pd.DataFrame:
-    """
-    Idealized next-open long-or-cash diagnostic.
-    Signal at close t → position from next open to next close.
-    """
+    """Hypothetical next-open-to-close ledger at daily XNYS frequency."""
     if preds is None or preds.empty or not cfg.report_trading_diagnostic:
         return pd.DataFrame()
 
-    p1 = preds[preds["horizon"] == 1].copy()
+    if not {"horizon", "origin", "y_hat"}.issubset(preds):
+        raise DataError("Trading diagnostic requires horizon, origin and y_hat")
+    p1 = preds.loc[preds["horizon"].eq(1), ["origin", "y_hat"]].copy()
     if p1.empty:
         return pd.DataFrame()
 
+    cal = XNYSCalendar()
+    if not isinstance(panel.index, pd.DatetimeIndex) or panel.index.tz is None:
+        raise DataError("Trading bars require a timezone-aware XNYS session-close index")
+    bar_dates = pd.Index(panel.index.tz_convert(cal.tz).date)
+    if bar_dates.hasnans or bar_dates.has_duplicates:
+        raise DataError("Trading bars contain a missing or duplicate session date")
+    if not {"open", "close"}.issubset(panel):
+        raise DataError("Trading bars require open and close prices")
+    origins = pd.Index(p1["origin"])
+    if not isinstance(origins, pd.DatetimeIndex) or origins.tz is None or origins.hasnans:
+        raise DataError("Trading signals require timezone-aware session-close origins")
+    p1["origin"] = origins.tz_convert(cal.tz)
+    if p1["origin"].duplicated().any():
+        raise DataError("Trading signals contain duplicate origins")
+    p1["y_hat"] = pd.to_numeric(p1["y_hat"], errors="coerce")
+    if not np.isfinite(p1["y_hat"].to_numpy(dtype=float, na_value=np.nan)).all():
+        raise DataError("Trading signals contain a nonfinite forecast")
+
     records = []
     cost = cfg.diagnostic_roundtrip_cost_bps / 10_000.0
+    if not np.isfinite(cost) or cost < 0:
+        raise DataError("Trading cost must be finite and nonnegative")
 
-    for _, row in p1.iterrows():
-        t = row["origin"]
-        if t not in panel.index:
-            continue
-        loc = panel.index.get_loc(t)
-        if isinstance(loc, slice) or (isinstance(loc, np.ndarray) and len(loc) != 1):
-            continue
-        if loc + 1 >= len(panel):
-            continue
-        next_row = panel.iloc[loc + 1]
-        if "open" not in next_row or next_row["open"] <= 0:
-            continue
+    equity = 1.0
+    previous_fill = None
+    for origin, y_hat in p1.sort_values("origin").itertuples(index=False, name=None):
+        origin_date = origin.date()
+        try:
+            signal_close = cal.session_close_dt(origin_date)
+            fill_date = cal.next_trading_day(origin_date)
+        except ValueError as exc:
+            raise DataError(str(exc)) from exc
+        if origin != signal_close or origin not in panel.index:
+            raise DataError(f"Trading origin {origin} does not match a priced XNYS close")
+        if previous_fill is not None and previous_fill != origin_date:
+            raise DataError(f"Trading signals have a gap at XNYS session {previous_fill}")
 
-        signal = 1 if row["y_hat"] > 0 else 0
-        o = float(next_row["open"])
-        c = float(next_row["close"])
-        raw_ret = (c / o) - 1.0
-        net_ret = signal * raw_ret - signal * cost
+        session_open = cal.session_open_dt(fill_date)
+        session_close = cal.session_close_dt(fill_date)
+        if session_close not in panel.index:
+            raise DataError(f"Trading fill missing for next XNYS session {fill_date}")
+        prices = pd.to_numeric(panel.loc[session_close, ["open", "close"]], errors="coerce")
+        open_price, close_price = prices.to_numpy(dtype=float, na_value=np.nan)
+        if not np.isfinite([open_price, close_price]).all() or min(open_price, close_price) <= 0:
+            raise DataError(f"Trading fill prices must be finite and positive on {fill_date}")
+
+        position = int(y_hat > 0)
+        raw_ret = float(close_price) / float(open_price) - 1.0
+        charged_cost = cost * position
+        net_ret = raw_ret - charged_cost if position else 0.0
+        equity *= 1.0 + net_ret
+        if not np.isfinite([raw_ret, equity]).all() or equity <= 0:
+            raise DataError(f"Trading return or equity is invalid on {fill_date}")
         records.append(
             {
-                "origin": t,
-                "signal": signal,
+                "origin": origin,
+                "horizon": 1,
+                "y_hat": y_hat,
+                "fill_date": fill_date,
+                "session_open": session_open,
+                "session_close": session_close,
+                "open_price": open_price,
+                "close_price": close_price,
+                "entry_at": session_open if position else pd.NaT,
+                "exit_at": session_close if position else pd.NaT,
+                "entry_price": open_price if position else np.nan,
+                "exit_price": close_price if position else np.nan,
+                "signal": position,
+                "position": position,
                 "raw_oc_ret": raw_ret,
+                "gross_ret": raw_ret if position else 0.0,
+                "cost": charged_cost,
+                "cash_ret": 0.0,
                 "net_ret": net_ret,
-                "y_hat": row["y_hat"],
+                "equity": equity,
             }
         )
+        previous_fill = fill_date
 
     return pd.DataFrame(records)

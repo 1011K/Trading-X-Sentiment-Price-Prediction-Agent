@@ -16,3 +16,13 @@ coverage.xml
 *.egg-info/
 build/
 dist/
+
+# Private datasets, provenance manifests and local replay runs
+private_data/
+outputs_submission/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm

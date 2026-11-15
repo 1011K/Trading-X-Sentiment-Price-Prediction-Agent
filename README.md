@@ -1,5 +1,8 @@
 > **Release status (15 Nov 2026): EXPERIMENTAL.** Synthetic tests and a local smoke run verify execution and selected point-in-time invariants, **not** historical X coverage, forecasting alpha, or deployable trading performance. Original five-ticker backtest output was deliberately excluded. Remaining Grok submissions are pending a neutral code review.
 
+For the dated AAPL submission replay, see [Reproduce the submission replay](docs/SUBMISSION_REPLAY.md).
+
+
 # CWT Quant — Research-Grade Reference Implementation
 
 **Status: EXPERIMENTAL / INDEPENDENT CANDIDATE**  

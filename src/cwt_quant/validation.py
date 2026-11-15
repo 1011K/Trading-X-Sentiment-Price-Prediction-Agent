@@ -120,7 +120,9 @@ def validate_posts(posts: pd.DataFrame, cfg: Config) -> List[str]:
 
     # Engagement asof should not be before created_at (data quality)
     if "engagement_asof" in posts.columns:
-        bad = posts["engagement_asof"].notna() & (posts["engagement_asof"] < posts["created_at"])
+        engagement = pd.to_datetime(posts["engagement_asof"], utc=True)
+        created = pd.to_datetime(posts["created_at"], utc=True)
+        bad = engagement < created
         if bad.any():
             warnings.append(
                 f"{int(bad.sum())} posts have engagement_asof < created_at (data quality issue)"
