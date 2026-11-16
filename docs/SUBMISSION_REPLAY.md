@@ -87,3 +87,5 @@ The lexical scorer can be evaluated offline against the pinned publisher trainin
 ```sh
 PYTHONPATH=src python -m cwt_quant.sentiment_eval   --train private_data/sent_train.csv --validation private_data/sent_valid.csv
 ```
+
+The final replay also writes `research-figure.png`. The four panels cover observed close and X sentiment, aligned X post activity, observed versus predicted next-session close, and the latest n+0–n+5 forecasts. If there are no eligible X observations, both X panels explicitly show that the evidence is withheld. The figure and report derive their prices and predictions from the same replay.

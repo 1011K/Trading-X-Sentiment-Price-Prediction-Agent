@@ -6,9 +6,11 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from html import escape
+from importlib.metadata import version
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -24,6 +26,7 @@ from .nowcast import open_nowcasts
 from .pipeline import run_pipeline
 from .replay_prices import capture_prices, evaluation_bounds, load_prices
 from .replay_store import store_run
+from .research_figure import research_figure
 from .x_analysis import chart_sentiment, sentiment_series, summarize_sentiment
 
 log = get_logger(__name__)
@@ -280,6 +283,8 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     origins = comparisons["price_only"]["origin"]
     manifest = {
         "ticker": ticker, "model_version": __version__,
+        "runtime_versions": {"python": sys.version.split()[0], "pandas": pd.__version__,
+                             "numpy": version("numpy"), "matplotlib": version("matplotlib")},
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "evaluation_start": str(start), "evaluation_end": str(end), "warmup_start": str(warmup),
         "evaluation_sessions": int((prices.index.date >= start).sum()),
@@ -326,6 +331,8 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     ledger.to_csv(out / "trade_ledger.csv", index=False)
     _chart(out / "price-and-models.png", result["panel"], comparison, start)
     chart_sentiment(out / "x-versus-price.png", result["panel"], series)
+    research = research_figure(ticker, result["panel"], series, comparisons, forecasts, nowcasts)
+    research.savefig(out / "research-figure.png", dpi=145)
     _write_reports(out, manifest, forecasts, comparison, risk, nowcasts)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n")
     return manifest

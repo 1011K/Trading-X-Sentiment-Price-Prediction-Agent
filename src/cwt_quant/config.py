@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from .exceptions import ConfigError
 
-PACKAGE_VERSION = "0.1.6-experimental"
+PACKAGE_VERSION = "0.1.7-experimental"
 
 
 @dataclass(frozen=True)

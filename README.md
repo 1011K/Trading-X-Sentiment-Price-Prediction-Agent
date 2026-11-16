@@ -1,115 +1,31 @@
-> **Release status (15 Nov 2026): EXPERIMENTAL.** Synthetic tests and a local smoke run verify execution and selected point-in-time invariants, **not** historical X coverage, forecasting alpha, or deployable trading performance. Original five-ticker backtest output was deliberately excluded. Remaining Grok submissions are pending a neutral code review.
+# CWT Quant — AAPL forecasting research
 
-For the dated AAPL submission replay, see [Reproduce the submission replay](docs/SUBMISSION_REPLAY.md) and the [AAPL evaluation evidence](docs/SUBMISSION_EVIDENCE.md). See also the [final audit](docs/FINAL_SUBMISSION_AUDIT.md) and [zero-cost data source review](docs/DATA_SOURCES_ZERO_COST.md).
+A reproducible Python replay for the CrowdWisdomTrading assessment. It scores authorized X observations when availability is documented, aligns them to exchange sessions, and compares direct Ridge forecasts with simple baselines. Recent news is contextual and stays outside model inputs.
 
+Current submission status: **partial**. The frozen AAPL replay includes real prices and an independently checked forecast and trading ledger. The historical X experiment requires an authorized corpus with point-in-time observations. [Final evidence and limits](docs/FINAL_SUBMISSION_AUDIT.md)
 
-# CWT Quant — Research-Grade Reference Implementation
+## Install and run
 
-**Status: EXPERIMENTAL / INDEPENDENT CANDIDATE**  
-Prepared 15 November 2026. Assessment target ~17 November 2026.
+Python 3.10 and 3.12 are tested.
 
-This is a **unified, leakage-safe** daily equity + X-sentiment research pipeline.  
-It is **not** a merger of the earlier Grok / DeepSeek / ChatGPT prototypes.  
-Those contained conflicting assumptions (hourly Yahoo, BTC calendar, engagement leakage, same-close fills, celebrity intercepts). Merging them would multiply bugs.
-
-## Design locks (from the adversarial audit)
-
-| Item | Decision |
-|------|----------|
-| Bars | Daily only (XNYS). Yahoo intraday ≤60 days; 180-day hourly rejected. |
-| Target | log(C[t+h]/C[t]), h=1..5. Explicit units. |
-| Post mapping | First *strictly later* session close (exact close → next; early closes respected). |
-| Sentiment | Transparent lexical baseline. Pre-scored columns only with provenance. |
-| Influence | Experimental formula, **gated** by historical engagement coverage. Reach does **not** create positive score. |
-| Models | No-change · Price Ridge · Price+Sentiment Ridge · (optional) Price+Influence Ridge. Fixed α=10. Scaler train-only. |
-| Walk-forward | Expanding. Label rule: train origin *i* usable at test *t* for horizon *h* only if `i+h ≤ t`. |
-| Trading diagnostic | Next-open long-or-cash only. Costs declared. Not a trading system. |
-| Complexity | LightGBM / RL / FinBERT ensembles **deferred**. Sample size does not support them. |
-| FinBERT | Weights CC BY-NC-SA-4.0. Do not assume commercial rights. |
-
-## Added robustness (v0.1.1)
-
-- Structured logging with configurable level
-- Custom exceptions (`ConfigError`, `DataError`, `LeakageError`, ...)
-- Input validation (prices, posts, panel) with fail-fast or soft audit
-- Missing session detection + configurable hard/soft policy
-- Author frequency cap per session (spam control)
-- Post-id deduplication with logging
-- Run manifest (`run_manifest.json`) for reproducibility
-- CLI exit codes + richer flags (`--log-level`, `--allow-missing-sessions`, ...)
-- Influence coverage gate messaging
-- Honest report includes warnings and adjustment policy
-
-## CI and source-integrity improvements
-
-- StockTwits HTTP access is an **optional** live-data dependency; offline regression tests do not require `requests`.
-- Raw StockTwits posts and news headlines are never altered to invent a cashtag. Current CWT aggregate scores cannot be backdated.
-- Offline CI checks Python 3.10 and 3.12, dependency consistency, and a synthetic CLI smoke run.
-- These checks protect reproducibility; **they are not an X-data backtest or proof of alpha**.
-
-## Quick start (synthetic)
-
-```bash
-cd cwt_quant
-pip install -r requirements.txt
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --out outputs
-pytest tests/ -q
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-real.txt
+PYTHONPATH=src python -m pytest -q
+PYTHONPATH=src python -m cwt_quant.submission --ticker AAPL --end 2026-11-13 --fetch-prices
 ```
 
-Expected: research report under `outputs/` and all deterministic offline tests green. Synthetic engagement coverage is not evidence of real-world influence.
+The first run saves the Yahoo Finance snapshot locally. Omit `--fetch-prices` to reuse the same inputs without network access. The price replay needs no API key. Use `--tavily-news` with a local `TAVILY_API_KEY` to capture current news, then `--news-snapshot` to replay that capture. Authorized X data requires a local export and source manifest. [Step-by-step reproduction](docs/SUBMISSION_REPLAY.md)
 
-## What is deliberately withheld
+## Method and evidence
 
-- Genuine forecasting skill / alpha  
-- Real 180-day X corpus & live connectors  
-- Corporate-action-adjusted price audit on real data  
-- Commercial FinBERT authorization  
-- Any claim that celebrity reach is proven predictive weight  
+- The 180-calendar-day evaluation ends 13 November 2026. The 126 evaluation sessions and separate 68-session warm-up use observed OHLCV and a complete US equities calendar.
+- n+0 is a same-day close forecast from information available at the open. n+1 through n+5 are post-close forecasts. Expanding folds use only mature labels and train-only scaling.
+- Retrospective X text and cutoff-eligible observations are tracked separately. Retrieved engagement is never backdated. X forecasts remain withheld when eligible coverage is inadequate.
+- Forecast comparisons use matched origins. The trading diagnostic applies positive n+1 signals to a hypothetical next-session open-to-close position, with 10 bps per round trip and explicit cash periods.
+- On the frozen AAPL sample, Ridge had lower RMSE at n+1 and higher RMSE at n+2 through n+5. The opening-price baseline had lower n+0 RMSE. These results describe one retrospective window.
 
-## P0 remaining work (before any submission claim)
+## Submission outputs
 
-1. Lawful 180-calendar-day X corpus with `created_at`, `post_id`, availability timestamps, and engagement *snapshots* (not current totals).  
-2. Verified adjusted / raw OHLC policy for one exchange-traded stock.  
-3. Run the identical pipeline on real data; produce the same honest report.  
-4. External score provenance if any non-lexical sentiment is used.  
-5. Full red-team re-run on the real corpus.
-
-## License note
-
-This reference code is provided for research evaluation. Model weights from third parties (e.g. ProsusAI/finbert) retain their original licenses.
-
-
-## Real data mode (prices + news)
-
-```bash
-pip install -r requirements-real.txt
-export NEWSAPI_KEY=...          # optional
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --real-data --out outputs_real
-```
-
-Produces:
-- `panel.csv`, walk-forward predictions
-- `forward_forecasts.csv` — **n+1 … n+5** close forecasts from the latest origin
-- research report + run manifest
-
-See `docs/REAL_DATA_AND_BOT.md` for X API cost reality, alternative free sources (StockTwits/Reddit), and personal-bot usage notes.
-
-## Verified implementation boundaries (15 November 2026)
-
-- A historical X archive with verified availability and engagement snapshots is **not included**.
-- A news headline or StockTwits message retrieved after a past market close is **not backdated** into that close.
-- `price_sentiment` is **not trained or reported** when eligible historical coverage is insufficient.
-- Influence requires point-in-time engagement **and follower-count** snapshots; author popularity alone adds no bullish score.
-- Calendar hard-coded for **2024–2026** only, with explicit failure outside those years. Refer to the [official NYSE holiday schedule](https://www.nyse.com/markets/hours-calendars) before extending dates.
-- CWT current daily score is contextual only and excluded from historical training. Its API data must not be republished.
-- Supported research workflow: local synthetic test → lawful input acquisition → validation → isolated empirical audit.
-- No LICENSE is published yet. The repository owner should approve a license before accepting external contributions or reuse.
-
-### Optional live connectors
-
-```bash
-pip install -r requirements-real.txt
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --real-data --out outputs_real
-```
-
-A live connection succeeding does **not** establish 180-day X coverage or statistical significance.
+The CLI writes the source manifest, SQLite replay, forecast tables, matched metrics, trade ledger, X coverage, two research charts plus a four-panel overview, one-page outlook, and evaluation under `outputs_submission/AAPL/`. Keep credentials, vendor snapshots and licensed source data local. [No-cost source audit](docs/DATA_SOURCES_ZERO_COST.md)
