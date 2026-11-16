@@ -23,9 +23,13 @@ The first run saves the Yahoo Finance snapshot locally. Omit `--fetch-prices` to
 - The 180-calendar-day evaluation ends 13 November 2026. The 126 evaluation sessions and separate 68-session warm-up use observed OHLCV and a complete US equities calendar.
 - n+0 is a same-day close forecast from information available at the open. n+1 through n+5 are post-close forecasts. Expanding folds use only mature labels and train-only scaling.
 - Retrospective X text and cutoff-eligible observations are tracked separately. Retrieved engagement is never backdated. X forecasts remain withheld when eligible coverage is inadequate.
-- Forecast comparisons use matched origins. The trading diagnostic applies positive n+1 signals to a hypothetical next-session open-to-close position, with 10 bps per round trip and explicit cash periods.
+- Forecast comparisons use matched origins. The n+1 target is close-to-close. The trading diagnostic simulates next-session open-to-close positions with 10 bps per round trip and explicit cash periods. Its Sharpe measures that retrospective simulation.
 - On the frozen AAPL sample, Ridge had lower RMSE at n+1 and higher RMSE at n+2 through n+5. The opening-price baseline had lower n+0 RMSE. These results describe one retrospective window.
 
-## Submission outputs
+## Partial submission index
 
-The CLI writes the source manifest, SQLite replay, forecast tables, matched metrics, trade ledger, X coverage, two research charts plus a four-panel overview, one-page outlook, and evaluation under `outputs_submission/AAPL/`. Keep credentials, vendor snapshots and licensed source data local. [No-cost source audit](docs/DATA_SOURCES_ZERO_COST.md)
+- `AAPL-evaluation.pdf` and `outlook.md` cover the price results, zero verified historical X posts, and Tavily context collected after the evaluation and excluded from both models.
+- `latest-n0-n5.csv` and `research-figure.png` show the frozen forecasts and available evidence. `open-nowcast.csv`, `post-close-forecasts.csv`, `model_comparison.csv`, and `trade_ledger.csv` support reconciliation.
+- [Reproduction guide](docs/SUBMISSION_REPLAY.md) gives the frozen-input checks and local packaging command. [Data source audit](docs/DATA_SOURCES_ZERO_COST.md) records the historical X coverage gap.
+
+Generated files stay local pending redistribution clearance. The public PR contains code, instructions, and aggregate evidence.

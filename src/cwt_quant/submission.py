@@ -79,6 +79,15 @@ def _chart(path: Path, panel: pd.DataFrame, comparisons: pd.DataFrame, start: da
     figure.savefig(path, dpi=145)
 
 
+def display_news_title(article: dict) -> str:
+    """Use the clean Yahoo Finance listing title without editing the capture."""
+    title = article["title"]
+    if (article["url"] == "https://finance.yahoo.com/markets/stocks/articles/why-did-aapl-zeta-frog-024109115.html"
+            and title.endswith("Last Week?c")):
+        return title.removesuffix("c")
+    return title
+
+
 def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
                    comparison: pd.DataFrame, risk: dict, nowcasts: pd.DataFrame) -> None:
     ticker = manifest["ticker"]
@@ -111,9 +120,12 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
         ])
     news = manifest["current_news"]
     if news.get("headlines"):
-        outlook.extend(["", f"**Current news context from Tavily.** Retrieved {news['collected_at_utc']}."])
+        outlook.extend([
+            "", f"**Current news context from Tavily.** Retrieved {news['collected_at_utc']}. "
+            f"The evaluation ended on {end}. Both forecast models exclude these headlines.",
+        ])
         for item in news.get("articles") or news["headlines"]:
-            title = escape(item["title"]).replace("[", "\\[").replace("]", "\\]")
+            title = escape(display_news_title(item)).replace("[", "\\[").replace("]", "\\]")
             date_text = item.get("published_at_utc") or item.get("published_date") or "date unavailable"
             outlook.append(f"- [{title}](<{item['url']}>) ({date_text})")
     else:

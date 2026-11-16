@@ -15,6 +15,28 @@ Run the command again without `--fetch-prices` to replay the same snapshot offli
 
 Generated files under `outputs_submission/<TICKER>/` include the one-page outlook, evaluation report, observed close and forward forecasts, matched walk-forward metrics, chronological trade ledger, chart, and source manifest. SQLite stores those data relationships and uses a run ID derived from the inputs and model version. Input snapshots, source manifests, raw posts and replay artifacts are local. Check your provider’s redistribution terms before sharing derived outputs or raw data.
 
+## Frozen AAPL partial submission
+
+Use the exact saved inputs and keep them local. A fresh Yahoo Finance download produces a new snapshot. Match these SHA-256 digests before running the offline replay.
+
+| Input | SHA-256 |
+| --- | --- |
+| `private_data/prices/AAPL.json` | `1b6c3babe4d176320a4b4f4c9e6203da045a243061d2d347cf2758636eaab1ff` |
+| `private_data/tavily-capture.json` | `2e612d26ff49c96e91b847c4e23e81885bb8bc1d3209be6d2313d59289fc3bb0` |
+
+Run from the checked-out packaging commit. The price results use the same implementation as PR #1 commit `28f7b47465c07de85f8ae70db84fbf717f7ef668`. The verified runtime uses Python 3.12, NumPy 2.5.4, pandas 2.3.3, Matplotlib 3.11.2, and ReportLab 5.1.0.
+
+```sh
+python -m pip install -r requirements.txt numpy==2.5.4 pandas==2.3.3 matplotlib==3.11.2 reportlab==5.1.0
+shasum -a 256 private_data/prices/AAPL.json private_data/tavily-capture.json
+PYTHONPATH=src python -m cwt_quant.submission --ticker AAPL --end 2026-11-13 \
+  --news-snapshot private_data/tavily-capture.json
+PYTHONPATH=src python scripts/render_aapl_submission.py \
+  outputs_submission/AAPL outputs_submission/partial-aapl "$(git rev-parse HEAD)"
+```
+
+Copy `research-figure.png`, `outlook.md`, `open-nowcast.csv`, `post-close-forecasts.csv`, `model_comparison.csv`, and `trade_ledger.csv` from the AAPL replay into the local delivery directory. Keep this guide with the package. Timestamped manifests and SQLite containers can differ across runs. Exact figure and PDF hashes require the same plotting, font, and PDF dependencies.
+
 ## Authorized X input
 
 `--x-export` accepts a JSON, JSONL, or CSV export from an already-authorized Apify dataset, and `--x-manifest` accepts its JSON provenance file. Required values are listed in the example below. Keep both under `private_data/`. Record rights, acquisition metadata and actual availability from the source rather than inferring it from publication dates.

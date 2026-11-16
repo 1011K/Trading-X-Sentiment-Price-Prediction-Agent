@@ -2,6 +2,8 @@
 
 Target is AAPL from 18 May through 13 November 2026, 180 New York calendar days. No paid service was used. Open-source software and permission to collect, analyze, or redistribute data have separate terms.
 
+The [assessment's historical dataset index](https://docs.google.com/document/d/1w-Y86OjkiOjlIIth0VgTAohql9zcGi3uoDNYTaTsZuw/edit) lists AAPL company tweets through 2020, StockTwits through 2022, and mixed stock and crypto tweets through 2023. The newer 2025–2026 entry covers Bitcoin. The index establishes no eligible AAPL X archive for the evaluation window.
+
 | Option | What it can support | Target-window result |
 | --- | --- | --- |
 | [The Community Archive on GitHub](https://github.com/TheExGenesis/community-archive), [opt-in data description](https://arxiv.org/html/2610.30392v1) | The November 2026 public snapshot contains participant-contributed X archives. Public search is free. Suitable for an explicitly retrospective sample if relevant rows are found. | Targeted search did not yield a verified AAPL sample. Search results cannot establish absence across the full export. |
