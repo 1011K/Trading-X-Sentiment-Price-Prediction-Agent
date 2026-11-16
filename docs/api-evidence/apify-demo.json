@@ -1,0 +1,59 @@
+{
+  "checks": [
+    {
+      "provider": "Apify",
+      "phase": "authentication",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/users/me",
+      "executed_at_utc": "2026-11-16T19:59:26.547713+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "0a45f765659aa9e1c190d9f5943b8881c6deb8abeb07ca28087c2ade0aeee541",
+      "outcome": "VERIFIED",
+      "free_plan": true,
+      "usage_cap_within_included": true
+    },
+    {
+      "provider": "Apify",
+      "phase": "included_usage",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/users/{authenticated-user}/usage/monthly",
+      "executed_at_utc": "2026-11-16T19:59:27.389726+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "eed7d106ef6585106a1bde2490ee2d920ade5423c2be7e8927c61bcfa50040a2",
+      "outcome": "VERIFIED",
+      "remaining_at_least_10_cents": true
+    },
+    {
+      "provider": "Apify",
+      "phase": "hello_world_actor",
+      "method": "POST",
+      "endpoint": "https://api.apify.com/v2/acts/apify~hello-world/runs?memory=128&timeout=30&waitForFinish=30",
+      "executed_at_utc": "2026-11-16T19:59:28.102364+00:00",
+      "http_status": 201,
+      "result_count": 1,
+      "response_sha256": "315d6261783565c717690ed3ed97a7d7796a5e8e7424057a91153c2ad9e3475f",
+      "outcome": "VERIFIED",
+      "actor_name": "apify/hello-world",
+      "run_id": "NDOvWnZSJfkrGsTaR",
+      "run_status": "SUCCEEDED",
+      "build_id": "FJcN16ufvqeFJC1pc",
+      "default_dataset_id": "AJxzihtrCkMRtezee"
+    },
+    {
+      "provider": "Apify",
+      "phase": "hello_world_output",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/key-value-stores/CkGSgFBNjqrIytXT8/records/OUTPUT",
+      "executed_at_utc": "2026-11-16T19:59:31.273731+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "93e610d6663abde2a83508b33e39f6944b63b54597d8eeff3cfcdc7080e73fea",
+      "outcome": "VERIFIED",
+      "run_id": "NDOvWnZSJfkrGsTaR"
+    }
+  ],
+  "actor_started": true,
+  "historical_x_status": "WITHHELD"
+}

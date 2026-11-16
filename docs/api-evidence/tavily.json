@@ -1,0 +1,36 @@
+{
+  "checks": [
+    {
+      "provider": "Tavily",
+      "phase": "authentication_and_quota",
+      "method": "GET",
+      "endpoint": "https://api.tavily.com/usage",
+      "executed_at_utc": "2026-11-16T19:56:21.014076+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "f7115efa3630decebe42de7ce38e64ab217347ca3d24c4ca1e1edb403517ecfb",
+      "outcome": "VERIFIED",
+      "free_plan": true,
+      "included_credit_available": true,
+      "no_paygo_quota_reported": true,
+      "key_capacity_available": true
+    },
+    {
+      "provider": "Tavily",
+      "phase": "aapl_news",
+      "method": "POST",
+      "endpoint": "https://api.tavily.com/search",
+      "executed_at_utc": "2026-11-16T19:56:21.653242+00:00",
+      "http_status": 200,
+      "result_count": 3,
+      "response_sha256": "84967040e570df6bdb8012475412922b4bd918922ac09c46c32b51cd640c321c",
+      "outcome": "VERIFIED",
+      "usable_article_count": 3,
+      "request_id": "bd0d3bac-367f-4cc9-a605-38177b37e01d",
+      "historical_features_eligible": false,
+      "search_depth": "basic"
+    }
+  ],
+  "actor_started": false,
+  "historical_x_status": "WITHHELD"
+}

@@ -452,14 +452,21 @@ def _authorization() -> dict:
     return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
 
-def _download_response(connection, path: str, headers: dict):
+def _download_response(connection, path: str, headers: dict, *, receipt: dict | None = None):
+    if receipt is not None and receipt["executed_at_utc"] is None:
+        receipt["executed_at_utc"] = datetime.now(timezone.utc).isoformat()
     connection.request("GET", path, headers=headers)
     response = connection.getresponse()
+    if receipt is not None:
+        receipt["http_status"] = response.status
+        receipt["response_sha256"] = None
     if response.status != 200:
         raise DataError(f"Apify request returned HTTP {response.status}")
     payload = response.read(_MAX_API_RESPONSE_BYTES + 1)
     if len(payload) > _MAX_API_RESPONSE_BYTES:
         raise DataError("Apify response exceeds the local byte limit")
+    if receipt is not None:
+        receipt["response_sha256"] = hashlib.sha256(payload).hexdigest()
     return response, payload
 
 
@@ -475,6 +482,7 @@ def _publish_new(path: Path, payload: bytes) -> None:
 
 def download_authorized_apify_dataset(
     dataset_id: str, path: Path, *, ticker: str, rights_basis: str, max_items: int = 10_000,
+    receipt: dict | None = None,
 ) -> dict:
     """Read an existing permissioned dataset and return the local export manifest."""
     manifest = {
@@ -515,7 +523,7 @@ def download_authorized_apify_dataset(
                 limit = min(1000, max_items - offset)
                 response, raw = _download_response(
                     connection, f"/v2/datasets/{dataset_id}/items?format=json&offset={offset}&limit={limit}&desc=false",
-                    headers,
+                    headers, receipt=receipt,
                 )
                 total_bytes += len(raw)
                 if total_bytes > _MAX_EXPORT_RESPONSE_BYTES:
@@ -543,6 +551,10 @@ def download_authorized_apify_dataset(
     except (OSError, TypeError, ValueError, http.client.HTTPException):
         raise DataError("Unable to read the complete authorized Apify dataset") from None
 
+    if any(key and key.encode() in payload for key in (
+        os.environ.get("APIFY_TOKEN", "").strip(), os.environ.get("TAVILY_API_KEY", "").strip(),
+    )):
+        raise DataError("Apify dataset contains a configured credential")
     _publish_new(path, payload)
     return {
         **manifest,

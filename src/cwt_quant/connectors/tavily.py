@@ -153,24 +153,30 @@ def validate_news_context(context: dict, ticker: str) -> dict:
     }
 
 
-def fetch_news_context(ticker: str) -> dict:
+def fetch_news_context(ticker: str, *, receipt: dict | None = None) -> dict:
     key = os.environ.get("TAVILY_API_KEY", "").strip()
     if not key:
         raise DataError("TAVILY_API_KEY is required for optional current news")
     request = _search_request(ticker)
     try:
         with closing(http.client.HTTPSConnection("api.tavily.com", timeout=20)) as client:
+            if receipt is not None:
+                receipt["executed_at_utc"] = datetime.now(timezone.utc).isoformat()
             client.request("POST", "/search", json.dumps(request), {
                 "Authorization": f"Bearer {key}", "Content-Type": "application/json",
             })
             response = client.getresponse()
+            if receipt is not None:
+                receipt["http_status"] = response.status
             if response.status != 200:
                 raise DataError(f"Tavily returned HTTP {response.status}")
             raw = response.read()
             collected = datetime.now(timezone.utc)
+            if receipt is not None:
+                receipt["response_sha256"] = hashlib.sha256(raw).hexdigest()
             payload = json.loads(raw)
             result = payload["results"]
-    except (OSError, http.client.HTTPException, KeyError, ValueError, TypeError):
+    except (OSError, http.client.HTTPException, KeyError, ValueError, TypeError, RecursionError):
         raise DataError("Tavily request failed") from None
 
     if not isinstance(result, list):

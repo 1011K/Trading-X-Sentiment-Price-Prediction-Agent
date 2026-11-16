@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "provider": "Apify",
+      "phase": "authorized_demo_dataset_read",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/datasets/AJxzihtrCkMRtezee/items",
+      "executed_at_utc": "2026-11-16T20:01:42.484524+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "e86b61bcc40972043f51e443b5fc7f23d9800d28cc42b8e7975dc60b94652dc4",
+      "outcome": "VERIFIED",
+      "dataset_id": "AJxzihtrCkMRtezee",
+      "page_count": 1,
+      "export_sha256": "9c2b16f979f97173f38594cde0311e314e33770162a5e66d701141f09d6e69d4",
+      "historical_features_eligible": false
+    }
+  ],
+  "actor_started": false,
+  "historical_x_status": "WITHHELD"
+}

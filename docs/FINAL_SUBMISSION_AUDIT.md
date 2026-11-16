@@ -7,8 +7,8 @@
 | 180 days of AAPL prices | VERIFIED | Yahoo Finance OHLCV, 18 May to 13 November 2026. 126 evaluation and 68 warm-up sessions. Split-bearing or incomplete snapshots fail validation. |
 | 180 days of X posts from ticker, cashtag and keyword searches | WITHHELD | Zero verified posts and zero covered dates. The historical source index does not establish a May to November 2026 AAPL archive. |
 | X timestamps, text, likes, reposts, views and followers | PARTIAL | The authorized importer records available fields and aligns observation cutoffs to New York sessions. Forecast-time text and engagement or follower snapshots remain unavailable for the assessment. Fixture tests exercise the gates. |
-| Apify actor and source provenance | PARTIAL | `apidojo/tweet-scraper` is the planner candidate. Import validates existing actor, run, build and dataset evidence. No actor ran and there is no empirical actor run ID. |
-| Recent Tavily news | VERIFIED | A prior saved basic search returned three results after evaluation. The final presentation uses two independently checked Apple releases as context. All news stays outside model features. |
+| Apify actor and source provenance | PARTIAL | `apidojo/tweet-scraper` is the planner candidate. Import validates existing actor, run, build and dataset evidence. No X actor ran and there is no empirical X run ID. The non-X demo has a separate [verified receipt](api-evidence/apify-demo.json). |
+| Recent Tavily news | VERIFIED | A [live basic search](api-evidence/tavily.json) returned three usable AAPL articles after evaluation. The final presentation uses two independently checked Apple releases as context. All news stays outside model features. |
 | Exa configuration and execution | NOT IMPLEMENTED | No Exa integration was configured or used for the assessment. |
 | Time-based sentiment and price features | PARTIAL | Lagged price returns, volatility and opening-gap features run on real bars. Lexical scores and aligned activity execute on eligible test data. The empirical replay uses prices alone. |
 | Database integration | VERIFIED | Local SQLite stores price bars, forecast and trade ledgers, and provenance. Authorized X exports and Tavily captures have separate tables. The assessment X table is empty. |
@@ -73,7 +73,7 @@ The prototypes, their ZIPs, historical validation notes and handoff reports rema
 
 ## Final API check and frozen replay
 
-On 16 November 2026, Apify returned HTTP 200 for the runs and datasets listings. Both were empty. No actor was launched. The current evidence is zero real X posts and zero covered days. An authorized historical corpus and credible cutoff-time evidence are still required, including separate snapshots for likes, reposts, views and followers. Exa is outside the active submission path.
+On 16 November 2026, Apify returned HTTP 200 for the runs and datasets listings. Both were empty in the initial assessment check. No X actor was launched. The current evidence is zero real X posts and zero covered days. An authorized historical corpus and credible cutoff-time evidence are still required, including separate snapshots for likes, reposts, views and followers. Exa is outside the active submission path.
 
 Tavily authenticated and reported a free plan with available included credits. One basic search at 05:33 UTC returned three dated AAPL-related results. Its response digest is `39545256b4ffc20616711ec3e0a20d220230d910d6ea3812eae6e125ef17236f`. The articles are current context collected after the frozen forecast origin. Provider dates are not evidence that an article was available at a model cutoff.
 
