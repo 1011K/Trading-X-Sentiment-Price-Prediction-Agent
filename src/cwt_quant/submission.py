@@ -100,6 +100,8 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
         f"**{end} observed close: USD {observed.forecast_close:.2f}.**",
         "", f"**Historical X signal: {x_status}.** {manifest['historical_x_note']}",
     ]
+    if manifest.get("build_mode") == "test-only":
+        outlook[2:2] = ["**TEST ONLY. Fixture results are software evidence.**", ""]
     summary = manifest["sentiment_outlook"]
     outlook.extend(["", f"**X sentiment window: {summary['start']} to {summary['end']} (New York).**"])
     for label, name in (("strict", "Time-eligible text"), ("retrospective", "Retrospective text")):
@@ -171,6 +173,8 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
         "", "| Model | Horizon | Matched n | MAE | RMSE | Direction |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if manifest.get("build_mode") == "test-only":
+        report[2:2] = ["**TEST ONLY. Fixture results are software evidence.**", ""]
     for row in comparison.itertuples(index=False):
         report.append(
             f"| {row.model} | {row.horizon} | {row.n} | {row.mae:.5f} | "
@@ -215,13 +219,16 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
 
 def evaluate(ticker: str, end: date, price_path: Path, out: Path,
              x_path: Path | None = None, x_manifest: Path | None = None,
-             current_news: dict | None = None) -> dict:
+             current_news: dict | None = None, *, expected_price_hash: str | None = None,
+             build_context: dict | None = None) -> dict:
     from . import __version__
     from .backtest import TradingFillError, trading_diagnostic
     from .metrics import matched_predictions
     from .x_export import coverage_audit
 
     prices, price_source = load_prices(price_path, ticker, end)
+    if expected_price_hash and price_source["sha256"] != expected_price_hash:
+        raise DataError("Frozen AAPL snapshot SHA-256 mismatch")
     warmup, start = evaluation_bounds(end)
     if current_news and current_news.get("source") == "Tavily":
         from .connectors.tavily import validate_news_context
@@ -324,6 +331,8 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     run_id = hashlib.sha256(run_inputs).hexdigest()
     manifest["run_id"] = run_id
     manifest["x_source"] = x_source
+    if build_context is not None:
+        manifest.update(build_context)
     out.mkdir(parents=True, exist_ok=True)
     store_run(out / "replay.sqlite3", run_id, manifest, prices, posts, result,
               forecasts, comparisons, trades, nowcasts=nowcasts)
@@ -343,7 +352,8 @@ def evaluate(ticker: str, end: date, price_path: Path, out: Path,
     ledger.to_csv(out / "trade_ledger.csv", index=False)
     _chart(out / "price-and-models.png", result["panel"], comparison, start)
     chart_sentiment(out / "x-versus-price.png", result["panel"], series)
-    research = research_figure(ticker, result["panel"], series, comparisons, forecasts, nowcasts)
+    figure_ticker = f"{ticker} | TEST ONLY" if manifest.get("build_mode") == "test-only" else ticker
+    research = research_figure(figure_ticker, result["panel"], series, comparisons, forecasts, nowcasts)
     research.savefig(out / "research-figure.png", dpi=145)
     _write_reports(out, manifest, forecasts, comparison, risk, nowcasts)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n")

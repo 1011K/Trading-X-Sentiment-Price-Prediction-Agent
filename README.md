@@ -4,19 +4,24 @@ A reproducible Python replay for the CrowdWisdomTrading assessment. It scores au
 
 Current submission status: **partial**. The frozen AAPL replay includes real prices and an independently checked forecast and trading ledger. The historical X experiment requires an authorized corpus with point-in-time observations. [Final evidence and limits](docs/FINAL_SUBMISSION_AUDIT.md)
 
-## Install and run
+## Generate your own AAPL result
 
-Python 3.10 and 3.12 are tested.
+Use Git and Python 3.12 from a terminal. The fresh run fetches historical daily bars from Yahoo Finance and requires internet access. No coding agent, API key or Tavily capture is needed.
 
 ```sh
-python -m venv .venv
+git clone https://github.com/1011K/Trading-X-Sentiment-Price-Prediction-Agent.git
+cd Trading-X-Sentiment-Price-Prediction-Agent
+git fetch origin refs/pull/1/head
+git switch --detach FETCH_HEAD
+python3.12 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements-real.txt
-PYTHONPATH=src python -m pytest -q
-PYTHONPATH=src python -m cwt_quant.submission --ticker AAPL --end 2026-11-13 --fetch-prices
+python -m pip install -r requirements-real.txt -r requirements-submission.txt
+PYTHONPATH=src python scripts/build_submission.py fresh --end 2026-11-13 --out outputs_submission/aapl-fresh
+cd outputs_submission/aapl-fresh
+shasum -a 256 -c SHA256SUMS.txt
 ```
 
-The first run saves the Yahoo Finance snapshot locally. Omit `--fetch-prices` to reuse the same inputs without network access. The price replay needs no API key. Use `--tavily-news` with a local `TAVILY_API_KEY` to capture current news, then `--news-snapshot` to replay that capture. Authorized X data requires a local export and source manifest. [Step-by-step reproduction](docs/SUBMISSION_REPLAY.md)
+Open `AAPL-evaluation.pdf` for evaluation and `latest-n0-n5.csv` for the latest forecast table. `manifest.json` records the price snapshot hash, run ID, source commit, and diagnostic risk metrics. A fresh download has its own snapshot and can reflect vendor revisions. The [exact frozen replay](docs/SUBMISSION_REPLAY.md#frozen-aapl-partial-submission) requires the original local price file. Both modes produce the PDF without news.
 
 ## Method and evidence
 
@@ -28,8 +33,10 @@ The first run saves the Yahoo Finance snapshot locally. Omit `--fetch-prices` to
 
 ## Partial submission index
 
-- `AAPL-evaluation.pdf` and `outlook.md` cover the price results, zero verified historical X posts, and Tavily context collected after the evaluation and excluded from both models.
+- `AAPL-evaluation.pdf` and `outlook.md` cover the price results, zero verified historical X posts, and optional Tavily context. News remains outside all models.
 - `latest-n0-n5.csv` and `research-figure.png` show the frozen forecasts and available evidence. `open-nowcast.csv`, `post-close-forecasts.csv`, `model_comparison.csv`, and `trade_ledger.csv` support reconciliation.
 - [Reproduction guide](docs/SUBMISSION_REPLAY.md) gives the frozen-input checks and local packaging command. [Data source audit](docs/DATA_SOURCES_ZERO_COST.md) records the historical X coverage gap.
 
-Generated files stay local pending redistribution clearance. The public PR contains code, instructions, and aggregate evidence.
+The builder also writes `evaluation.md`, `manifest.json`, `x-coverage.json`, and `SHA256SUMS.txt`. Generated files stay local pending redistribution clearance. The public PR contains code, instructions, and aggregate evidence.
+
+[Current integration register](docs/INTEGRATION_MATRIX.md) maps all 62 prior candidates to this implementation.
