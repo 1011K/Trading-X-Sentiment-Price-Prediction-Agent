@@ -39,13 +39,17 @@ def main() -> int:
     parser.add_argument("--end", type=date.fromisoformat, default=FROZEN_END)
     parser.add_argument("--prices-dir", type=Path, help="Directory containing AAPL.json")
     parser.add_argument("--reuse-prices", action="store_true", help="Replay an existing fresh snapshot offline")
-    parser.add_argument("--news-snapshot", type=Path, help="Optional saved Tavily capture")
+    news_options = parser.add_mutually_exclusive_group()
+    news_options.add_argument("--news-snapshot", type=Path, help="Optional saved Tavily capture")
+    news_options.add_argument("--issuer-context", action="store_true", help="Use the reviewed Apple releases for the assessment")
     parser.add_argument("--x-export", type=Path, help="TEST ONLY X fixture")
     parser.add_argument("--x-manifest", type=Path, help="TEST ONLY X fixture attestation")
     parser.add_argument("--out", type=Path, required=True, help="New local delivery directory")
     args = parser.parse_args()
     if args.mode == "frozen" and args.end != FROZEN_END:
         parser.error("Frozen mode requires --end 2026-11-13")
+    if args.issuer_context and args.end != FROZEN_END:
+        parser.error("--issuer-context applies to the 2026-11-13 assessment")
     if args.reuse_prices and args.mode != "fresh":
         parser.error("--reuse-prices applies only to fresh mode")
     if bool(args.x_export) != bool(args.x_manifest) or (args.x_export and args.mode != "test-only"):
@@ -73,7 +77,11 @@ def main() -> int:
             capture_prices(prices, "AAPL", args.end)
 
         news, news_hash = None, None
-        if args.news_snapshot is not None:
+        if args.issuer_context:
+            capture = (ROOT / "docs" / "AAPL_ISSUER_CONTEXT.json").read_bytes()
+            news = json.loads(capture)
+            news_hash = sha256(capture).hexdigest()
+        elif args.news_snapshot is not None:
             try:
                 capture = args.news_snapshot.read_bytes()
             except FileNotFoundError:

@@ -33,6 +33,8 @@ PYTHONPATH=src python scripts/build_submission.py frozen --out outputs_submissio
 
 Optionally pass `--news-snapshot private_data/tavily-capture.json` to either build. A missing file produces a news-withheld report. An invalid capture fails validation. The saved Tavily capture adds context to the original report. The forecasts, figure and trading diagnostic come from prices and stay identical when the capture is omitted.
 
+For the final assessment presentation, pass `--issuer-context` in place of `--news-snapshot`. It uses two [reviewed Apple releases](AAPL_ISSUER_CONTEXT.json) for the 13 November assessment, with publication dates and retrieval time shown separately. Both context options remain outside model inputs.
+
 The builder runs the existing replay once and copies the deliverables from that run. The PDF uses its research figure and model metrics. The latest forecast table combines the same-day opening nowcasts with the n+1 to n+5 rows from the post-close forecast table. `manifest.json` records the Git commit and local modification flag, runtime, mode, input fingerprints, results, and trading risk. `SHA256SUMS.txt` covers all other bundle files. Run timestamps and runtime metadata can change between executions. Exact rendering hashes depend on the same dependencies and fonts.
 
 `test-only` accepts locally authored test fixtures and marks the PDF, chart, evaluation and outlook. Run `PYTHONPATH=src python -m pytest -q tests/test_submission_builder.py` to exercise both the price-only workflow and the historical X eligibility gate offline. The fixture results document software behavior only.

@@ -93,3 +93,24 @@ def test_frozen_builder_refuses_replacement_prices(tmp_path):
     assert result.returncode == 1
     assert "Frozen AAPL snapshot SHA-256 mismatch" in result.stderr
     assert not out.exists()
+
+
+def test_assessment_issuer_context_stays_outside_models(tmp_path):
+    snapshot(tmp_path / "AAPL.json")
+    plain, issuer = tmp_path / "plain", tmp_path / "issuer"
+    args = ["test-only", "--prices-dir", tmp_path]
+    assert run_builder(*args, "--out", plain).returncode == 0
+    result = run_builder(*args, "--issuer-context", "--out", issuer)
+    assert result.returncode == 0, result.stderr
+    meta = json.loads((issuer / "manifest.json").read_text())
+    context = meta["current_news"]
+    assert context["source"] == "Apple Newsroom"
+    assert context["historical_features_eligible"] is False
+    assert {a["published_date"] for a in context["articles"]} == {"2026-11-02", "2026-11-13"}
+    assert context["collected_at_utc"].startswith("2026-11-16")
+    issuer_file = ROOT / "docs" / "AAPL_ISSUER_CONTEXT.json"
+    assert meta["news_snapshot_sha256"] == hashlib.sha256(issuer_file.read_bytes()).hexdigest()
+    outlook = (issuer / "outlook.md").read_text()
+    assert "Apple Newsroom" in outlook and "2026-11-16" in outlook and "2026-11-13" in outlook
+    for name in ("latest-n0-n5.csv", "model_comparison.csv", "trade_ledger.csv", "research-figure.png"):
+        assert (issuer / name).read_bytes() == (plain / name).read_bytes()

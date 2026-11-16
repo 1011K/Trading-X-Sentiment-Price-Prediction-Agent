@@ -121,15 +121,15 @@ def _write_reports(out: Path, manifest: dict, forecasts: pd.DataFrame,
             "Price-only Ridge estimates the same-day close from the opening print and earlier prices.",
         ])
     news = manifest["current_news"]
-    if news.get("headlines"):
+    if news.get("articles") or news.get("headlines"):
         outlook.extend([
-            "", f"**Current news context from Tavily.** Retrieved {news['collected_at_utc']}. "
-            f"The evaluation ended on {end}. Both forecast models exclude these headlines.",
+            "", f"**Current news context from {news['source']}.** Retrieved {news['collected_at_utc']}. "
+            f"The evaluation ended on {end}. All forecast models exclude this context.",
         ])
         for item in news.get("articles") or news["headlines"]:
             title = escape(display_news_title(item)).replace("[", "\\[").replace("]", "\\]")
             date_text = item.get("published_at_utc") or item.get("published_date") or "date unavailable"
-            outlook.append(f"- [{title}](<{item['url']}>) ({date_text})")
+            outlook.append(f"- [{title}](<{item['url']}>) (publication: {date_text})")
     else:
         outlook.extend(["", "**Recent news: WITHHELD.** " + news["note"]])
     outlook.extend([

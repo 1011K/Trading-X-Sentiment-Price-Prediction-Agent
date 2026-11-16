@@ -1,20 +1,39 @@
 # Final AAPL implementation and submission audit
 
-Started from PR #1 commit `59eea79c8c08773f9a9b5048a1e952d0ffe45f73`. The submission remains partial. [No-cost source review](DATA_SOURCES_ZERO_COST.md) · [Replay commands](SUBMISSION_REPLAY.md)
+**Ready for partial submission.** This report describes retrospective price-only research. [Employer brief](https://docs.google.com/document/d/1OWrHpiqUSkqjncbRaQ3Z2Lb3EOBmFIYTCO0_BwGdhFw/edit) · [No-cost source review](DATA_SOURCES_ZERO_COST.md) · [Replay commands](SUBMISSION_REPLAY.md)
 
-| Requirement | Status | Evidence |
+| Employer requirement | Status | Evidence and remaining work |
 | --- | --- | --- |
-| Real, authorized 180-day AAPL X data | BLOCKED | 0 verified posts, 0 covered dates and 0 forecast-eligible posts. No valid historical observation or engagement snapshots. A dated public archive check found no verified target sample. |
-| AAPL price inputs and exchange sessions | VERIFIED | 126 evaluation and 68 warm-up sessions. Verified all 194 dates from the saved vendor snapshot against the US exchange schedule and checked AAPL origin-close and corporate-action records. |
-| n+0 and n+1 through n+5 | VERIFIED | Price-only benchmark. 126 paired opening nowcasts, and 121 matched held-out origins per post-close horizon. Opening forecasts use the observed opening quote and earlier prices. |
-| Look-ahead protection and baseline checks | VERIFIED | Reject unordered or repeated origins before training. Independent replay recalculated all 1,210 post-close outcomes and 252 n+0 outcomes from underlying prices. |
-| Tavily live articles and timestamps | VERIFIED | Authenticated free-plan usage check and one basic search on 16 November 2026. Three dated results were stored in a single capture. Timestamps came from the search provider. |
-| One-page market outlook and news isolation | PARTIAL | Current Tavily news is in the one-page outlook. Both model feature sets exclude news. The X sentiment section remains withheld. |
-| Relevance and lexical evaluation | VERIFIED | AAPL issuer phrases and ticker-in-context preserve genuine keyword-only hits without setting the cashtag flag. 2,387 held-out publisher-labelled texts were evaluated. |
-| Influence and celebrity weighting | EXPERIMENTAL | Neither enters the empirical replay. Archived retrieval-time counts remain unverified for historical use. |
-| Trading ledger accounting | VERIFIED | 242 model-by-session rows independently reconciled. Risk withholds on missing or invalid fills, with the dated issue carried to logs and report. |
-| Trading performance | EXPERIMENTAL | Intraday hypothetical execution with 10 bps round-trip cost. Positive close-to-close forecasts are signals for a different holding interval. On 25 of 121 opportunities, realized close-to-close and open-to-close direction differed. |
-| Frozen replay, chart, and SQLite | VERIFIED | Saved AAPL snapshot, deterministic replay outputs, coverage JSON, nowcast/forecast ledgers, and a four-panel research graphic that marks unavailable X panels. SQLite integrity and foreign keys checked. |
+| 180 days of AAPL prices | VERIFIED | Yahoo Finance OHLCV, 18 May to 13 November 2026. 126 evaluation and 68 warm-up sessions. Split-bearing or incomplete snapshots fail validation. |
+| 180 days of X posts from ticker, cashtag and keyword searches | WITHHELD | Zero verified posts and zero covered dates. The historical source index does not establish a May to November 2026 AAPL archive. |
+| X timestamps, text, likes, reposts, views and followers | PARTIAL | The authorized importer records available fields and aligns observation cutoffs to New York sessions. Forecast-time text and engagement or follower snapshots remain unavailable for the assessment. Fixture tests exercise the gates. |
+| Apify actor and source provenance | PARTIAL | `apidojo/tweet-scraper` is the planner candidate. Import validates existing actor, run, build and dataset evidence. No actor ran and there is no empirical actor run ID. |
+| Recent Tavily news | VERIFIED | A prior saved basic search returned three results after evaluation. The final presentation uses two independently checked Apple releases as context. All news stays outside model features. |
+| Exa configuration and execution | NOT IMPLEMENTED | No Exa integration was configured or used for the assessment. |
+| Time-based sentiment and price features | PARTIAL | Lagged price returns, volatility and opening-gap features run on real bars. Lexical scores and aligned activity execute on eligible test data. The empirical replay uses prices alone. |
+| Database integration | VERIFIED | Local SQLite stores price bars, forecast and trade ledgers, and provenance. Authorized X exports and Tavily captures have separate tables. The assessment X table is empty. |
+| n+0 to n+5 forecast | PARTIAL | Two price-only variants run at all six horizons. n+0 uses the 09:30 New York opening print and prior prices. Later horizons use the close. The X-assisted assessment remains withheld. |
+| Walk-forward validation | VERIFIED | Expanding windows train on mature labels with train-only scaling. Comparison uses paired models on 126 opening and 121 post-close origins per horizon. |
+| X sentiment versus price chart | PARTIAL | The four-panel chart explicitly marks unavailable X sentiment and activity. It charts observed prices and price-only forecasts. |
+| One-page sentiment outlook | PARTIAL | The outlook includes the latest price forecasts and issuer context with separate publication and retrieval dates. Historical X sentiment remains withheld. |
+| Sharpe, Sortino and maximum drawdown | VERIFIED | Retrospective Ridge execution diagnostic, 121 opportunities, 71 longs and 50 cash sessions. It models next-session open-to-close execution with a 10 bp round-trip charge and approximate fills. |
+| GitHub submission and reproducibility | VERIFIED | PR #1 documents fresh and frozen modes. Fresh mode needs provider access. Exact frozen replay needs the original snapshot with the recorded digest. No coding agent, Tavily key or Apify token is required for the price-only workflow. |
+| Tokens and actor IDs for reviewer reproduction | WITHHELD | No reusable tokens are included. There is no empirical actor run ID. A reviewer can provide their own authorized credentials for optional acquisition. |
+
+## Price-only evaluation
+
+| Horizon | Matched origins per model | Naive MAE | Ridge MAE | Naive RMSE | Ridge RMSE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| n+0 | 126 | 0.01083 | 0.01092 | 0.01425 | 0.01438 |
+| n+1 | 121 | 0.01268 | 0.01267 | 0.01753 | 0.01746 |
+| n+2 | 121 | 0.01756 | 0.01790 | 0.02476 | 0.02485 |
+| n+3 | 121 | 0.02235 | 0.02232 | 0.03059 | 0.03077 |
+| n+4 | 121 | 0.02567 | 0.02532 | 0.03457 | 0.03520 |
+| n+5 | 121 | 0.02851 | 0.02821 | 0.03764 | 0.03894 |
+
+Errors are in log-return units. The naive reference is the session open for n+0 and the origin close for n+1 to n+5. Close-to-close forecasts and open-to-close execution use different return intervals. Ridge diagnostic Sharpe was **2.30**, Sortino **3.81** and maximum drawdown **−12.74%**. Observed quote fills are approximations. The results cover one sample and live trading performance remains unvalidated.
+
+Request a rights-cleared historical AAPL X export with documented cutoff-time observations. To test influence, request separately timestamped likes, reposts, views and follower snapshots.
 
 ## Frozen sources and independence
 

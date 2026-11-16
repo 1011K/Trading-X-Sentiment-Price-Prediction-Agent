@@ -69,6 +69,9 @@ def render(root: Path, output: Path, commit: str) -> None:
               f"{meta['x_eligible_rows']} cutoff-eligible records. {escape(meta['historical_x_note'])}")
     if not meta["x_export_rows_for_ticker"]:
         paragraph("<b>Zero verified historical X posts.</b>")
+    if status == "WITHHELD":
+        paragraph("Request a rights-cleared AAPL export with cutoff-time text observations and separately "
+                  "timestamped engagement and follower counts.", "SmallAAPL")
     paragraph(f"Observed close on {meta['evaluation_end']}: USD {meta['observed_close']:.2f}.", "SmallAAPL")
     paragraph("Forecast error on matched origins", "SectionAAPL")
     rows = [["Horizon","Origins","Baseline MAE","Ridge MAE","Baseline RMSE","Ridge RMSE"]]
@@ -81,8 +84,9 @@ def render(root: Path, output: Path, commit: str) -> None:
         rows.append([f"n+{h}",r["n"],fmt(b["mae"]),fmt(r["mae"]),fmt(b["rmse"]),fmt(r["rmse"])])
     table(rows, [55,48,90,84,96,90])
     story.append(Spacer(1,8))
-    paragraph("Errors use log returns. n+0 targets the open-to-close return and uses the opening quote. "
-              "Later forecasts target close-to-close returns. Expanding folds use prior mature labels.", "SmallAAPL")
+    paragraph("Errors use log returns. The n+0 baseline uses the opening price and the later baseline uses "
+              "the origin close. Ridge uses the opening print and earlier prices for n+0, and close-time data "
+              "for later horizons. Expanding folds use matured labels only.", "SmallAAPL")
     paragraph("Chronological hypothetical trading diagnostic", "SectionAAPL")
     def risk_value(value, spec):
         return format(value, spec) if isinstance(value, (float, int)) else "WITHHELD"
@@ -114,28 +118,37 @@ def render(root: Path, output: Path, commit: str) -> None:
     story.append(PageBreak())
     paragraph(f"{mode.upper()}  /  RESEARCH FIGURE", "SmallAAPL")
     paragraph("Price, forecasts and X coverage", "TitleAAPL")
-    story.append(Image(str(root / "research-figure.png"), width=6.8*inch, height=6.8*inch*2/3))
-    paragraph("The n+0 opening forecasts and observed close are separate markers. "
-              f"Other horizons use the {meta['evaluation_end']} close as their origin.", "SmallAAPL")
+    story.append(Image(str(root / "research-figure.png"), width=6.1*inch, height=6.1*inch*2/3))
+    paragraph("Latest price forecasts (USD)", "SectionAAPL")
+    by_horizon = {(int(r["horizon"]), r["model"]): r for r in latest_open + latest_forward}
+    values = [["Horizon", "Target session", "Naive baseline", "Price Ridge"]]
+    for horizon in range(6):
+        baseline = by_horizon[horizon, "no_change"]
+        ridge = by_horizon[horizon, "price_only"]
+        values.append([f"n+{horizon}", ridge["target_session"],
+                       f"{float(baseline['forecast_close']):.2f}", f"{float(ridge['forecast_close']):.2f}"])
+    table(values, [65, 124, 136, 122])
+    story.append(Spacer(1, 6))
+    opened = datetime.fromisoformat(latest_open[0]["origin"])
+    closed = datetime.fromisoformat(latest_forward[0]["origin"])
+    paragraph(f"n+0 uses the {opened:%H:%M} New York open. n+1 to n+5 use the {closed:%H:%M} "
+              f"New York close on {meta['evaluation_end']}. Values are projections as of those cutoffs.", "SmallAAPL")
     paragraph("Current news context", "SectionAAPL")
     if news.get("articles"):
         collected = datetime.fromisoformat(news["collected_at_utc"])
         session_close = XNYSCalendar().session_close_dt(date.fromisoformat(meta["evaluation_end"]))
         timing = " after the forecast evaluation ended" if collected > session_close else ""
-        paragraph(f"Tavily collected {len(news['articles'])} results on "
-                  f"{collected:%Y-%m-%d %H:%M:%S} UTC{timing}. All forecast models excluded Tavily news.")
+        paragraph(f"{escape(news['source'])} context retrieved "
+                  f"{collected:%Y-%m-%d %H:%M:%S} UTC{timing}. Excluded from all models.", "SmallAAPL")
         for article in news["articles"]:
             url = escape(article["url"], quote=True)
             host = url.split("/")[2]
             published = escape(article.get("published_date") or "date unavailable")
-            paragraph(f'{published}  |  <link href="{url}" color="#1d5787">{escape(host)}</link>  |  '
+            paragraph(f'Published {published}  |  <link href="{url}" color="#1d5787">{escape(host)}</link>  |  '
                       f'{escape(display_news_title(article))}', "SmallAAPL")
         paragraph("Provider dates do not establish historical availability.", "SmallAAPL")
     else:
         paragraph(f"<b>News withheld.</b> {escape(news['note'])}")
-
-    if status == "WITHHELD":
-        paragraph("An authorized archive with documented forecast-time X observations is still required.", "SmallAAPL")
 
     def footer(canvas, doc):
         canvas.setStrokeColor(colors.HexColor("#d8e2e9"))

@@ -2,7 +2,7 @@
 
 A reproducible Python replay for the CrowdWisdomTrading assessment. It scores authorized X observations when availability is documented, aligns them to exchange sessions, and compares direct Ridge forecasts with simple baselines. Recent news is contextual and stays outside model inputs.
 
-Current submission status: **partial**. The frozen AAPL replay includes real prices and an independently checked forecast and trading ledger. The historical X experiment requires an authorized corpus with point-in-time observations. [Final evidence and limits](docs/FINAL_SUBMISSION_AUDIT.md)
+Current submission status: **partial**. The frozen AAPL replay includes real prices and an independently checked forecast and trading ledger. The historical X experiment requires an authorized corpus with point-in-time observations. [Employer requirement matrix and evidence](docs/FINAL_SUBMISSION_AUDIT.md)
 
 ## Generate your own AAPL result
 
