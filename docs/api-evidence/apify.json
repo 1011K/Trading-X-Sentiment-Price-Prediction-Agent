@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {
+      "provider": "Apify",
+      "phase": "authentication",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/users/me",
+      "executed_at_utc": "2026-11-16T19:56:18.417501+00:00",
+      "http_status": 200,
+      "result_count": 1,
+      "response_sha256": "0a45f765659aa9e1c190d9f5943b8881c6deb8abeb07ca28087c2ade0aeee541",
+      "outcome": "VERIFIED"
+    },
+    {
+      "provider": "Apify",
+      "phase": "run_inventory",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/actor-runs?limit=10&desc=1",
+      "executed_at_utc": "2026-11-16T19:56:19.168480+00:00",
+      "http_status": 200,
+      "result_count": 0,
+      "response_sha256": "19233c11097a581a224bbc69577d642b3973a81c33ead3b9bd14026494d23405",
+      "outcome": "VERIFIED",
+      "inventory_total": 0
+    },
+    {
+      "provider": "Apify",
+      "phase": "dataset_inventory",
+      "method": "GET",
+      "endpoint": "https://api.apify.com/v2/datasets?limit=10&desc=1&unnamed=1",
+      "executed_at_utc": "2026-11-16T19:56:19.832476+00:00",
+      "http_status": 200,
+      "result_count": 0,
+      "response_sha256": "f960f289e4521030ff10278d5711b8d2f519eb57ad2d69b6ffa07416f6a1c4aa",
+      "outcome": "VERIFIED",
+      "inventory_total": 0
+    }
+  ],
+  "actor_started": false,
+  "historical_x_status": "WITHHELD"
+}

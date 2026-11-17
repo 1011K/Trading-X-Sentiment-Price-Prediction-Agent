@@ -56,14 +56,19 @@ def fetch_news_headlines(
         "language": "en",
         "sortBy": "publishedAt",
         "pageSize": min(max_items, 100),
-        "apiKey": key,
     }
     try:
-        r = requests.get(url, params=params, timeout=20)
+        r = requests.get(
+            url,
+            params=params,
+            headers={"X-Api-Key": key},
+            timeout=20,
+            allow_redirects=False,
+        )
         r.raise_for_status()
         articles = r.json().get("articles", [])
-    except Exception as exc:
-        log.warning("NewsAPI request failed: %s", exc)
+    except Exception:
+        log.warning("NewsAPI request failed")
         return pd.DataFrame(columns=["published_at", "title", "source", "url", "ticker"])
 
     rows = []

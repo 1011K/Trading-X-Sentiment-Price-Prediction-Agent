@@ -1,0 +1,98 @@
+{
+  "queries": [
+    {
+      "endpoint": "https://embed.tweetstack.app/embeddings/search",
+      "request_json": {
+        "searchTerm": "Apple Inc stock shares ticker AAPL earnings quarterly revenue Tim Cook investors",
+        "k": 150,
+        "threshold": 0.35,
+        "filter": {
+          "must": [
+            {
+              "key": "created_at",
+              "range": {
+                "gte": "2026-05-18T04:00:00Z",
+                "lt": "2026-07-01T04:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "retrieved_at": "2026-11-15T18:09:41.631025+00:00",
+      "response_sha256": "ecb7f25f518b0b4526f27cdb080b9cd70b8fc95349ce175d3597252adc45be7c",
+      "rows_scanned": 10,
+      "retained": 0
+    },
+    {
+      "endpoint": "https://embed.tweetstack.app/embeddings/search",
+      "request_json": {
+        "searchTerm": "Apple Inc stock shares ticker AAPL earnings quarterly revenue Tim Cook investors",
+        "k": 150,
+        "threshold": 0.35,
+        "filter": {
+          "must": [
+            {
+              "key": "created_at",
+              "range": {
+                "gte": "2026-07-01T04:00:00Z",
+                "lt": "2026-09-01T04:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "retrieved_at": "2026-11-15T18:09:36.279402+00:00",
+      "response_sha256": "2139a6607256f188191aba581fb779b9995ab1db06843495e2433629d2e4606b",
+      "rows_scanned": 13,
+      "retained": 0
+    },
+    {
+      "endpoint": "https://embed.tweetstack.app/embeddings/search",
+      "request_json": {
+        "searchTerm": "Apple Inc stock shares ticker AAPL earnings quarterly revenue Tim Cook investors",
+        "k": 150,
+        "threshold": 0.35,
+        "filter": {
+          "must": [
+            {
+              "key": "created_at",
+              "range": {
+                "gte": "2026-09-01T04:00:00Z",
+                "lt": "2026-10-01T04:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "retrieved_at": "2026-11-15T18:09:39.947400+00:00",
+      "response_sha256": "e09ce58c6f7f1f223013895e95b14e0d9a0655a94c897f41072ff06d2a7c030f",
+      "rows_scanned": 5,
+      "retained": 0
+    },
+    {
+      "endpoint": "https://embed.tweetstack.app/embeddings/search",
+      "request_json": {
+        "searchTerm": "Apple Inc stock shares ticker AAPL earnings quarterly revenue Tim Cook investors",
+        "k": 150,
+        "threshold": 0.35,
+        "filter": {
+          "must": [
+            {
+              "key": "created_at",
+              "range": {
+                "gte": "2026-10-01T04:00:00Z",
+                "lt": "2026-11-14T05:00:00Z"
+              }
+            }
+          ]
+        }
+      },
+      "retrieved_at": "2026-11-15T18:09:43.379623+00:00",
+      "response_sha256": "2dbbb3e041e816d6e0f0f6c2fe4e8151b276179bf004b0bab4aae7a2594920c7",
+      "rows_scanned": 22,
+      "retained": 0
+    }
+  ],
+  "larger_request_timeouts": 8,
+  "unique_matches": 0
+}

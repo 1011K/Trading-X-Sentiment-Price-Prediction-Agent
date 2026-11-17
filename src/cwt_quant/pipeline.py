@@ -4,6 +4,7 @@ End-to-end research pipeline with full error handling.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -21,10 +22,27 @@ from .forward import fit_latest_models, forecast_forward
 from .validation import validate_prices, validate_posts, validate_panel
 
 
+def _first_eligible_session(
+    posts: pd.DataFrame, min_posts: int, min_sessions: int
+) -> date | None:
+    if posts.empty:
+        return None
+    posts_by_session = posts.groupby("session_date", sort=True).size()
+    for session_count, (session, post_count) in enumerate(
+        posts_by_session.cumsum().items(), start=1
+    ):
+        if session_count >= min_sessions and post_count >= min_posts:
+            return session
+    return None
+
+
 def run_pipeline(
     cfg: Optional[Config] = None,
     force_synthetic: bool = True,
     out_dir: Optional[Path] = None,
+    *,
+    inputs: tuple[pd.DataFrame, pd.DataFrame, dict] | None = None,
+    evaluation_start: date | None = None,
 ) -> Dict[str, Any]:
     cfg = cfg or Config()
     try:
@@ -44,7 +62,10 @@ def run_pipeline(
     warnings: list = []
 
     try:
-        prices, posts, meta = load_or_generate(cfg, force_synthetic=force_synthetic)
+        prices, posts, meta = (
+            load_or_generate(cfg, force_synthetic=force_synthetic) if inputs is None else inputs
+        )
+        meta = dict(meta)
     except NotImplementedError:
         raise
     except Exception as exc:
@@ -75,10 +96,18 @@ def run_pipeline(
 
     # Coverage gate for *any* sentiment model. Zero-filled unavailable external
     # history is not evidence of historical sentiment forecasting capability.
-    sent_n = len(post_feat) if post_feat is not None else 0
-    sent_sessions = post_feat["session_date"].nunique() if sent_n else 0
-    sentiment_ok = (sent_n >= cfg.min_posts_for_sentiment and
-                    sent_sessions >= cfg.min_sessions_with_sentiment)
+    covered_posts = post_feat
+    if not post_feat.empty:
+        covered_posts = post_feat.loc[post_feat["session_date"].isin(panel["session_date"])]
+    sent_n = len(covered_posts)
+    sent_sessions = covered_posts["session_date"].nunique() if sent_n else 0
+    sentiment_start = _first_eligible_session(
+        covered_posts, cfg.min_posts_for_sentiment, cfg.min_sessions_with_sentiment
+    )
+    sentiment_ok = sentiment_start is not None
+    model_start_dates = {}
+    if sentiment_start is not None:
+        model_start_dates["price_sentiment"] = sentiment_start
     meta["sentiment_gate_passed"] = bool(sentiment_ok)
     meta["sentiment_posts_eligible"] = int(sent_n)
     meta["sentiment_sessions_eligible"] = int(sent_sessions)
@@ -91,14 +120,16 @@ def run_pipeline(
 
     # Coverage gate for influence
     influence_ok = False
-    if sentiment_ok and cfg.enable_influence and post_feat is not None and not post_feat.empty:
-        valid = post_feat.loc[post_feat["influence_valid"]].copy()
+    if sentiment_start is not None and cfg.enable_influence:
+        valid = covered_posts.loc[covered_posts["influence_valid"]]
         total_posts = len(valid)
         sessions_with = valid["session_date"].nunique()
-        influence_ok = (
-            total_posts >= cfg.min_posts_for_influence
-            and sessions_with >= cfg.min_sessions_with_posts
+        influence_start = _first_eligible_session(
+            valid, cfg.min_posts_for_influence, cfg.min_sessions_with_posts
         )
+        influence_ok = influence_start is not None
+        if influence_start is not None:
+            model_start_dates["price_influence"] = max(sentiment_start, influence_start)
         meta["influence_gate_passed"] = influence_ok
         meta["influence_total_posts"] = total_posts
         meta["influence_sessions"] = sessions_with
@@ -116,7 +147,16 @@ def run_pipeline(
 
     # Walk-forward
     try:
-        pred_tables = walk_forward(panel, cfg, enable_influence=influence_ok, enable_sentiment=sentiment_ok)
+        pred_tables = walk_forward(
+            panel, cfg, enable_influence=influence_ok, enable_sentiment=sentiment_ok,
+            model_start_dates=model_start_dates,
+        )
+        if evaluation_start is not None:
+            pred_tables = {
+                name: frame.loc[frame["origin"].dt.date >= evaluation_start].reset_index(drop=True)
+                if not frame.empty else frame
+                for name, frame in pred_tables.items()
+            }
     except Exception as exc:
         raise CWTQuantError(f"Walk-forward failed: {exc}") from exc
 
@@ -128,6 +168,7 @@ def run_pipeline(
         except Exception as exc:
             log.warning("Trading diagnostic for %s failed: %s", name, exc)
             trade_tables[name] = pd.DataFrame()
+            trade_tables[name].attrs["withheld_reason"] = str(exc)
 
     # Forward n+1..n+5 forecasts from latest origin
     try:
@@ -162,6 +203,7 @@ def run_pipeline(
         "config": cfg,
         "meta": meta,
         "panel": panel,
+        "post_features": post_feat,
         "daily_sentiment": daily_sent,
         "predictions": pred_tables,
         "trades": trade_tables,

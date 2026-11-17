@@ -90,6 +90,7 @@ def write_report(
     lines.append("- Engagement after origin close: influence weight forced neutral / excluded.")
     lines.append("- Train label rule `i + h <= t`: enforced in walk-forward.")
     lines.append("- Scaler fit on train fold only: enforced.")
+    lines.append("- Sentiment model eligibility uses coverage through each forecast origin. Compare models on matching origins and horizons.")
     lines.append("- Cashtag gate + post_id dedup: enforced.")
     lines.append("")
     lines.append("## 5. Conclusion (honest)")

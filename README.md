@@ -1,112 +1,86 @@
-> **Release status (15 Nov 2026): EXPERIMENTAL.** Synthetic tests and a local smoke run verify execution and selected point-in-time invariants, **not** historical X coverage, forecasting alpha, or deployable trading performance. Original five-ticker backtest output was deliberately excluded. Remaining Grok submissions are pending a neutral code review.
+# CWT Quant — AAPL forecasting research
 
-# CWT Quant — Research-Grade Reference Implementation
+A reproducible Python replay for the CrowdWisdomTrading assessment. It scores authorized X observations when availability is documented, aligns them to exchange sessions, and compares direct Ridge forecasts with simple baselines. Recent news is contextual and stays outside model inputs.
 
-**Status: EXPERIMENTAL / INDEPENDENT CANDIDATE**  
-Prepared 15 November 2026. Assessment target ~17 November 2026.
+## Start here for employer review
 
-This is a **unified, leakage-safe** daily equity + X-sentiment research pipeline.  
-It is **not** a merger of the earlier Grok / DeepSeek / ChatGPT prototypes.  
-Those contained conflicting assumptions (hourly Yahoo, BTC calendar, engagement leakage, same-close fills, celebrity intercepts). Merging them would multiply bugs.
+**Status.** Live Apify and Tavily checks are verified. The AAPL assessment is partial because zero historical X posts qualified for evaluation.
 
-## Design locks (from the adversarial audit)
+| Review task | Where to start |
+| --- | --- |
+| Run provider checks with your own free keys | [Free-tier setup and commands](#verify-the-free-tier-apis) |
+| Inspect live execution evidence | [Apify authentication](docs/api-evidence/apify.json), [Hello World execution and output](docs/api-evidence/apify-demo.json), [demo dataset read](docs/api-evidence/apify-demo-dataset.json), [Tavily quota and AAPL search](docs/api-evidence/tavily.json) |
+| Review the price-only result | [AAPL evaluation and requirement matrix](docs/FINAL_SUBMISSION_AUDIT.md) |
+| Reproduce the evaluation and run tests | [Fresh and frozen replay](docs/SUBMISSION_REPLAY.md), [offline test commands](docs/SUBMISSION_REPLAY.md#offline-tests) |
+| Check outstanding limitations | [Historical X and review limits](docs/FINAL_SUBMISSION_AUDIT.md#outstanding-limitations) |
 
-| Item | Decision |
-|------|----------|
-| Bars | Daily only (XNYS). Yahoo intraday ≤60 days; 180-day hourly rejected. |
-| Target | log(C[t+h]/C[t]), h=1..5. Explicit units. |
-| Post mapping | First *strictly later* session close (exact close → next; early closes respected). |
-| Sentiment | Transparent lexical baseline. Pre-scored columns only with provenance. |
-| Influence | Experimental formula, **gated** by historical engagement coverage. Reach does **not** create positive score. |
-| Models | No-change · Price Ridge · Price+Sentiment Ridge · (optional) Price+Influence Ridge. Fixed α=10. Scaler train-only. |
-| Walk-forward | Expanding. Label rule: train origin *i* usable at test *t* for horizon *h* only if `i+h ≤ t`. |
-| Trading diagnostic | Next-open long-or-cash only. Costs declared. Not a trading system. |
-| Complexity | LightGBM / RL / FinBERT ensembles **deferred**. Sample size does not support them. |
-| FinBERT | Weights CC BY-NC-SA-4.0. Do not assume commercial rights. |
+## Generate your own AAPL result
 
-## Added robustness (v0.1.1)
+Use Git and Python 3.12 from a terminal. The fresh run fetches historical daily bars from Yahoo Finance and requires internet access. No coding agent, API key or Tavily capture is needed.
 
-- Structured logging with configurable level
-- Custom exceptions (`ConfigError`, `DataError`, `LeakageError`, ...)
-- Input validation (prices, posts, panel) with fail-fast or soft audit
-- Missing session detection + configurable hard/soft policy
-- Author frequency cap per session (spam control)
-- Post-id deduplication with logging
-- Run manifest (`run_manifest.json`) for reproducibility
-- CLI exit codes + richer flags (`--log-level`, `--allow-missing-sessions`, ...)
-- Influence coverage gate messaging
-- Honest report includes warnings and adjustment policy
-
-## CI and source-integrity improvements
-
-- StockTwits HTTP access is an **optional** live-data dependency; offline regression tests do not require `requests`.
-- Raw StockTwits posts and news headlines are never altered to invent a cashtag. Current CWT aggregate scores cannot be backdated.
-- Offline CI checks Python 3.10 and 3.12, dependency consistency, and a synthetic CLI smoke run.
-- These checks protect reproducibility; **they are not an X-data backtest or proof of alpha**.
-
-## Quick start (synthetic)
-
-```bash
-cd cwt_quant
-pip install -r requirements.txt
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --out outputs
-pytest tests/ -q
+```sh
+git clone https://github.com/1011K/Trading-X-Sentiment-Price-Prediction-Agent.git
+cd Trading-X-Sentiment-Price-Prediction-Agent
+git fetch origin refs/pull/1/head
+git switch --detach FETCH_HEAD
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-real.txt -r requirements-submission.txt
+PYTHONPATH=src python scripts/build_submission.py fresh --end 2026-11-13 --out outputs_submission/aapl-fresh
+(cd outputs_submission/aapl-fresh && shasum -a 256 -c SHA256SUMS.txt)
 ```
 
-Expected: research report under `outputs/` and all deterministic offline tests green. Synthetic engagement coverage is not evidence of real-world influence.
+Open `AAPL-evaluation.pdf` for evaluation and `latest-n0-n5.csv` for the latest forecast table. `manifest.json` records the price snapshot hash, run ID, source commit, and diagnostic risk metrics. A fresh download has its own snapshot and can reflect vendor revisions. The [exact frozen replay](docs/SUBMISSION_REPLAY.md#frozen-aapl-partial-submission) requires the original local price file. Both modes produce the PDF without news.
 
-## What is deliberately withheld
+## Verify the free-tier APIs
 
-- Genuine forecasting skill / alpha  
-- Real 180-day X corpus & live connectors  
-- Corporate-action-adjusted price audit on real data  
-- Commercial FinBERT authorization  
-- Any claim that celebrity reach is proven predictive weight  
-
-## P0 remaining work (before any submission claim)
-
-1. Lawful 180-calendar-day X corpus with `created_at`, `post_id`, availability timestamps, and engagement *snapshots* (not current totals).  
-2. Verified adjusted / raw OHLC policy for one exchange-traded stock.  
-3. Run the identical pipeline on real data; produce the same honest report.  
-4. External score provenance if any non-lexical sentiment is used.  
-5. Full red-team re-run on the real corpus.
-
-## License note
-
-This reference code is provided for research evaluation. Model weights from third parties (e.g. ProsusAI/finbert) retain their original licenses.
-
-
-## Real data mode (prices + news)
+Create your own free keys in the [Apify Console](https://console.apify.com/) and [Tavily dashboard](https://app.tavily.com/). Use Tavily Researcher with pay-as-you-go disabled. In Bash, read the keys without echoing them and export them for this terminal session only.
 
 ```bash
-pip install -r requirements-real.txt
-export NEWSAPI_KEY=...          # optional
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --real-data --out outputs_real
+read -r -s -p "Apify token: " APIFY_TOKEN
+printf '\n'
+read -r -s -p "Tavily key: " TAVILY_API_KEY
+printf '\n'
+export APIFY_TOKEN TAVILY_API_KEY
+
+PYTHONPATH=src python -m cwt_quant.api_verify apify-auth --inventory --out private_data/api-evidence/apify.json
+PYTHONPATH=src python -m cwt_quant.api_verify apify-demo --out private_data/api-evidence/apify-demo.json
+PYTHONPATH=src python -m cwt_quant.api_verify tavily-search --out private_data/api-evidence/tavily.json
 ```
 
-Produces:
-- `panel.csv`, walk-forward predictions
-- `forward_forecasts.csv` — **n+1 … n+5** close forecasts from the latest origin
-- research report + run manifest
+`apify-auth` reads account metadata and optional inventory counts. `apify-demo` checks the free-plan cap and remaining allowance before starting one [official Hello World Actor](https://apify.com/apify/hello-world) with 128 MB and a 30-second timeout. It checks the Actor's key-value output. `tavily-auth` checks authentication and quota only. `tavily-search` repeats that check and sends one basic AAPL news request when free capacity is verified.
 
-See `docs/REAL_DATA_AND_BOT.md` for X API cost reality, alternative free sources (StockTwits/Reddit), and personal-bot usage notes.
-
-## Verified implementation boundaries (15 November 2026)
-
-- A historical X archive with verified availability and engagement snapshots is **not included**.
-- A news headline or StockTwits message retrieved after a past market close is **not backdated** into that close.
-- `price_sentiment` is **not trained or reported** when eligible historical coverage is insufficient.
-- Influence requires point-in-time engagement **and follower-count** snapshots; author popularity alone adds no bullish score.
-- Calendar hard-coded for **2024–2026** only, with explicit failure outside those years. Refer to the [official NYSE holiday schedule](https://www.nyse.com/markets/hours-calendars) before extending dates.
-- CWT current daily score is contextual only and excluded from historical training. Its API data must not be republished.
-- Supported research workflow: local synthetic test → lawful input acquisition → validation → isolated empirical audit.
-- No LICENSE is published yet. The repository owner should approve a license before accepting external contributions or reuse.
-
-### Optional live connectors
+To verify the demo dataset separately, set `DEMO_DATASET_ID` to the `default_dataset_id` from **your** demo receipt. Confirm your included storage allowance before the read.
 
 ```bash
-pip install -r requirements-real.txt
-PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --real-data --out outputs_real
+PYTHONPATH=src python -m cwt_quant.api_verify apify-dataset --demo-records \
+  --dataset-id "$DEMO_DATASET_ID" --rights-basis "Own Hello World demo storage" \
+  --max-items 10 --confirm-included-storage --out private_data/api-evidence/apify-demo-dataset.json
+unset APIFY_TOKEN TAVILY_API_KEY
 ```
 
-A live connection succeeding does **not** establish 180-day X coverage or statistical significance.
+For an existing authorized X dataset, omit `--demo-records` and supply its actual ID, documented rights, and a bound that covers the entire dataset. The check runs the repository's X importer. An API download remains retrospective and supplies no forecast-time attestation. Each command writes a new receipt with sanitized counts, timestamps, HTTP responses and hashes. Use new filenames to repeat a check. Keep private receipts and credentials local.
+
+### Live API results
+
+On 16 November 2026 UTC, Apify authentication and both inventory requests returned HTTP 200. The inventory was empty before the official non-X Hello World run. The launch returned HTTP 201, the run succeeded, and its output read returned HTTP 200. A separate dataset read returned HTTP 200 with one generic demo record. Tavily returned HTTP 200 for both the quota check and one basic AAPL search, with three usable results.
+
+Historical X stays **WITHHELD**. No X Actor ran and no historical posts were ingested. The demo record and Tavily news stayed outside the forecasting models. Tavily was the verified news provider. Exa was unused.
+
+## Method and evidence
+
+- The 180-calendar-day evaluation ends 13 November 2026. The 126 evaluation sessions and separate 68-session warm-up use observed OHLCV and a complete US equities calendar.
+- n+0 is a same-day close forecast from information available at the open. n+1 through n+5 are post-close forecasts. Expanding folds use only mature labels and train-only scaling.
+- Retrospective X text and cutoff-eligible observations are tracked separately. Retrieved engagement is never backdated. X forecasts remain withheld when eligible coverage is inadequate.
+- Forecast comparisons use matched origins. The n+1 target is close-to-close. The trading diagnostic simulates next-session open-to-close positions with 10 bps per round trip and explicit cash periods. Its Sharpe measures that retrospective simulation.
+- On the frozen AAPL sample, Ridge had lower RMSE at n+1 and higher RMSE at n+2 through n+5. The opening-price baseline had lower n+0 RMSE. These results describe one retrospective window.
+
+## Partial submission index
+
+- `AAPL-evaluation.pdf` and `outlook.md` cover the price results, zero verified historical X posts, and optional Tavily context. News remains outside all models.
+- `latest-n0-n5.csv` and `research-figure.png` show the frozen forecasts and available evidence. `open-nowcast.csv`, `post-close-forecasts.csv`, `model_comparison.csv`, and `trade_ledger.csv` support reconciliation.
+- [Reproduction guide](docs/SUBMISSION_REPLAY.md) gives the frozen-input checks and local packaging command. [Data source audit](docs/DATA_SOURCES_ZERO_COST.md) records the historical X coverage gap.
+
+The builder also writes `evaluation.md`, `manifest.json`, `x-coverage.json`, and `SHA256SUMS.txt`. Generated files stay local pending redistribution clearance. The public PR contains code, instructions, and aggregate evidence.
+
+[Current integration register](docs/INTEGRATION_MATRIX.md) maps all 62 prior candidates to this implementation.
