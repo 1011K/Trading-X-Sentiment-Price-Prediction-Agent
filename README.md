@@ -2,7 +2,17 @@
 
 A reproducible Python replay for the CrowdWisdomTrading assessment. It scores authorized X observations when availability is documented, aligns them to exchange sessions, and compares direct Ridge forecasts with simple baselines. Recent news is contextual and stays outside model inputs.
 
-Current submission status: **partial**. The frozen AAPL replay includes real prices and an independently checked forecast and trading ledger. The historical X experiment requires an authorized corpus with point-in-time observations. [Employer requirement matrix and evidence](docs/FINAL_SUBMISSION_AUDIT.md)
+## Start here for employer review
+
+**Status.** Live Apify and Tavily checks are verified. The AAPL assessment is partial because zero historical X posts qualified for evaluation.
+
+| Review task | Where to start |
+| --- | --- |
+| Run provider checks with your own free keys | [Free-tier setup and commands](#verify-the-free-tier-apis) |
+| Inspect live execution evidence | [Apify authentication](docs/api-evidence/apify.json), [Hello World execution and output](docs/api-evidence/apify-demo.json), [demo dataset read](docs/api-evidence/apify-demo-dataset.json), [Tavily quota and AAPL search](docs/api-evidence/tavily.json) |
+| Review the price-only result | [AAPL evaluation and requirement matrix](docs/FINAL_SUBMISSION_AUDIT.md) |
+| Reproduce the evaluation and run tests | [Fresh and frozen replay](docs/SUBMISSION_REPLAY.md), [offline test commands](docs/SUBMISSION_REPLAY.md#offline-tests) |
+| Check outstanding limitations | [Historical X and review limits](docs/FINAL_SUBMISSION_AUDIT.md#outstanding-limitations) |
 
 ## Generate your own AAPL result
 
@@ -17,8 +27,7 @@ python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements-real.txt -r requirements-submission.txt
 PYTHONPATH=src python scripts/build_submission.py fresh --end 2026-11-13 --out outputs_submission/aapl-fresh
-cd outputs_submission/aapl-fresh
-shasum -a 256 -c SHA256SUMS.txt
+(cd outputs_submission/aapl-fresh && shasum -a 256 -c SHA256SUMS.txt)
 ```
 
 Open `AAPL-evaluation.pdf` for evaluation and `latest-n0-n5.csv` for the latest forecast table. `manifest.json` records the price snapshot hash, run ID, source commit, and diagnostic risk metrics. A fresh download has its own snapshot and can reflect vendor revisions. The [exact frozen replay](docs/SUBMISSION_REPLAY.md#frozen-aapl-partial-submission) requires the original local price file. Both modes produce the PDF without news.
@@ -54,9 +63,9 @@ For an existing authorized X dataset, omit `--demo-records` and supply its actua
 
 ### Live API results
 
-Executed on 17 November 2026 in India (16 November UTC). [Apify authentication and inventory](docs/api-evidence/apify.json) returned HTTP 200 with zero runs and zero datasets before the demo. The [non-X Hello World run](docs/api-evidence/apify-demo.json) returned HTTP 201 and completed successfully. Its output read returned HTTP 200. The [demo dataset check](docs/api-evidence/apify-demo-dataset.json) returned HTTP 200 and verified one generic row. [Tavily](docs/api-evidence/tavily.json) authenticated with included free capacity and returned HTTP 200 with three usable AAPL news results.
+On 16 November 2026 UTC, Apify authentication and both inventory requests returned HTTP 200. The inventory was empty before the official non-X Hello World run. The launch returned HTTP 201, the run succeeded, and its output read returned HTTP 200. A separate dataset read returned HTTP 200 with one generic demo record. Tavily returned HTTP 200 for both the quota check and one basic AAPL search, with three usable results.
 
-Historical X stays **WITHHELD**. No X Actor ran. The demo row and Tavily news never enter the forecasting models. The documented news provider is Tavily. Exa remains outside the integration.
+Historical X stays **WITHHELD**. No X Actor ran and no historical posts were ingested. The demo record and Tavily news stayed outside the forecasting models. Tavily was the verified news provider. Exa was unused.
 
 ## Method and evidence
 

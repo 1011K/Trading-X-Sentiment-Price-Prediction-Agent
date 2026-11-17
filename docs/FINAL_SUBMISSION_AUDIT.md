@@ -7,7 +7,8 @@
 | 180 days of AAPL prices | VERIFIED | Yahoo Finance OHLCV, 18 May to 13 November 2026. 126 evaluation and 68 warm-up sessions. Split-bearing or incomplete snapshots fail validation. |
 | 180 days of X posts from ticker, cashtag and keyword searches | WITHHELD | Zero verified posts and zero covered dates. The historical source index does not establish a May to November 2026 AAPL archive. |
 | X timestamps, text, likes, reposts, views and followers | PARTIAL | The authorized importer records available fields and aligns observation cutoffs to New York sessions. Forecast-time text and engagement or follower snapshots remain unavailable for the assessment. Fixture tests exercise the gates. |
-| Apify actor and source provenance | PARTIAL | `apidojo/tweet-scraper` is the planner candidate. Import validates existing actor, run, build and dataset evidence. No X actor ran and there is no empirical X run ID. The non-X demo has a separate [verified receipt](api-evidence/apify-demo.json). |
+| Apify platform verification | VERIFIED | [Authentication and inventory](api-evidence/apify.json), [Hello World run and output](api-evidence/apify-demo.json), and [one-row demo dataset read](api-evidence/apify-demo-dataset.json) each have a live receipt. |
+| Apify historical X acquisition | WITHHELD | `apidojo/tweet-scraper` is the planner candidate. The importer can verify an authorized run, build and dataset. No X actor ran and no historical X data was ingested. |
 | Recent Tavily news | VERIFIED | A [live basic search](api-evidence/tavily.json) returned three usable AAPL articles after evaluation. The final presentation uses two independently checked Apple releases as context. All news stays outside model features. |
 | Exa configuration and execution | NOT IMPLEMENTED | No Exa integration was configured or used for the assessment. |
 | Time-based sentiment and price features | PARTIAL | Lagged price returns, volatility and opening-gap features run on real bars. Lexical scores and aligned activity execute on eligible test data. The empirical replay uses prices alone. |
@@ -18,7 +19,7 @@
 | One-page sentiment outlook | PARTIAL | The outlook includes the latest price forecasts and issuer context with separate publication and retrieval dates. Historical X sentiment remains withheld. |
 | Sharpe, Sortino and maximum drawdown | VERIFIED | Retrospective Ridge execution diagnostic, 121 opportunities, 71 longs and 50 cash sessions. It models next-session open-to-close execution with a 10 bp round-trip charge and approximate fills. |
 | GitHub submission and reproducibility | VERIFIED | PR #1 documents fresh and frozen modes. Fresh mode needs provider access. Exact frozen replay needs the original snapshot with the recorded digest. No coding agent, Tavily key or Apify token is required for the price-only workflow. |
-| Tokens and actor IDs for reviewer reproduction | WITHHELD | No reusable tokens are included. There is no empirical actor run ID. A reviewer can provide their own authorized credentials for optional acquisition. |
+| Credentials for reviewer reproduction | WITHHELD | Reviewers supply their own free keys using the [verification commands](../README.md#verify-the-free-tier-apis). The non-X demo run ID is published in its receipt. No historical X run ID exists. |
 
 ## Price-only evaluation
 
@@ -71,10 +72,16 @@ The active tree retains the `cwt_quant` implementation, its connectors, the exis
 
 The prototypes, their ZIPs, historical validation notes and handoff reports remain recoverable at the [previous PR head](https://github.com/1011K/Trading-X-Sentiment-Price-Prediction-Agent/tree/24b1ab8bcdc69d5782e270b01752a465592a60aa). The current audit preserves the eligibility, market-calendar and redistribution constraints.
 
-## Final API check and frozen replay
+## Live API verification and frozen replay
 
-On 16 November 2026, Apify returned HTTP 200 for the runs and datasets listings. Both were empty in the initial assessment check. No X actor was launched. The current evidence is zero real X posts and zero covered days. An authorized historical corpus and credible cutoff-time evidence are still required, including separate snapshots for likes, reposts, views and followers. Exa is outside the active submission path.
+On 16 November 2026 UTC, Apify account authentication and inventory requests returned HTTP 200. Both inventories were empty before the demo. The official `apify/hello-world` launch returned HTTP 201 and completed with status `SUCCEEDED`. Reading its key-value output and its dataset both returned HTTP 200. The dataset contained one generic demo record.
 
-Tavily authenticated and reported a free plan with available included credits. One basic search at 05:33 UTC returned three dated AAPL-related results. Its response digest is `39545256b4ffc20616711ec3e0a20d220230d910d6ea3812eae6e125ef17236f`. The articles are current context collected after the frozen forecast origin. Provider dates are not evidence that an article was available at a model cutoff.
+The later Tavily verification at 19:56 UTC returned HTTP 200 for quota and HTTP 200 for search, with three usable AAPL news results. Its receipt records counts and a response digest. The optional private capture at 05:33 UTC is a different response with digest `39545256b4ffc20616711ec3e0a20d220230d910d6ea3812eae6e125ef17236f`. Both were collected after the evaluation cutoff. The final presentation uses reviewed Apple releases, and all news stays outside model features.
 
-A separate standard-library check confirmed the exact price input digest, all 194 source bars, 1,210 walk-forward target rows, 252 n+0 rows, and all 242 ledger rows. It recalculated MAE, RMSE, directional accuracy, round-trip charges, Sharpe, Sortino and drawdown. The final SQLite database passed integrity and foreign-key checks and contains one news capture with three articles and no X posts. The four-panel figure reads these replay records and keeps unobserved X series empty.
+A separate standard-library check confirmed the exact price input digest, all 194 source bars, 1,210 walk-forward target rows, 252 n+0 rows, and all 242 ledger rows. It recalculated MAE, RMSE, directional accuracy, round-trip charges, Sharpe, Sortino and drawdown. The earlier SQLite replay with the optional private Tavily capture passed integrity and foreign-key checks and stored three news articles and zero X posts. The four-panel figure keeps unobserved X series empty.
+
+## Outstanding limitations
+
+- Historical X evaluation is **WITHHELD**, with zero verified posts and zero covered dates. It needs a rights-cleared AAPL corpus with documented cutoff-time observations for 18 May to 13 November 2026. Influence tests also need separately timestamped likes, reposts, views and follower counts.
+- Apify demo execution verifies the platform and a generic dataset read. Historical X acquisition, X-assisted forecast accuracy and sentiment alpha remain unverified. Exa was unused.
+- Exact frozen replay requires the original price snapshot. The public checkout supports a fresh replay. Provider snapshots, article payloads and price-derived bundles stay local pending redistribution clearance.

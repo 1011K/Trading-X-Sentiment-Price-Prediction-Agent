@@ -2,6 +2,21 @@
 
 This path uses the repository’s existing direct-horizon Ridge model, with an isolated 180-calendar-day evaluation window. Python 3.10 and 3.12 are supported. The exchange calendar covers 2024–2026. Use eligible USD-listed US equities or ETFs with a complete price history and a split-free input window. Symbols with a different exchange calendar, unsupported instrument type, or incomplete bars fail closed.
 
+## API verification
+
+Run the [reviewer-owned free-key commands](../README.md#verify-the-free-tier-apis) separately from the forecast replay. Apify authentication and inventory are read-only checks. The optional Hello World check launches an official non-X Actor, verifies its output, and supplies a dataset ID for a separate read. The live demo dataset contained one generic record. Tavily verifies free quota before one basic AAPL search. [Live receipts](api-evidence/) record statuses, timestamps, counts and digests. They contain no article bodies or replayable news capture. No historical X posts came from these checks.
+
+## Offline tests
+
+From the repository root in an activated virtual environment, run:
+
+```sh
+python -m pip install -r requirements-submission.txt
+PYTHONPATH=src python -m pytest -q tests
+```
+
+The suite uses fixtures for provider calls and does not need credentials. The live receipts document the separate credentialed checks.
+
 ## Independent run from a clean checkout
 
 From the root of the checked-out PR branch, activate a Python 3.12 virtual environment and run:
