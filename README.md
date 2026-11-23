@@ -1,6 +1,33 @@
+# CWT Quant
+
+Leakage-safe walk-forward research harness for daily equity prices with optional sentiment features. **Experimental.** Developed with AI assistance by Krishiv Ramchandani.
+
+## At a glance
+
+```mermaid
+flowchart LR
+  A[Daily XNYS bars] --> C[Point-in-time panel]
+  B[Posts mapped to first later session close] --> C
+  C --> D[Expanding walk-forward<br/>train-only scaler, Ridge alpha=10]
+  D --> E[Models: no-change, price, price+sentiment]
+  E --> F[Next-open long-or-cash diagnostic<br/>declared costs]
+  F --> G[Honest report + run manifest]
+```
+
+| | |
+|---|---|
+| Verified | Synthetic tests and a CLI smoke run on Python 3.10 and 3.12 (offline CI) |
+| Not verified | Real historical X data, forecasting skill, trading performance |
+| Reproduce | `PYTHONPATH=src python -m cwt_quant.cli --ticker AAPL --out outputs` then `pytest tests/ -q` (see Quick start below) |
+| Known limits | No real X corpus; calendar covers 2024-2026 only; no licence published yet |
+
+The sections below are the original detailed notes and design locks.
+
+---
+
 > **Release status (15 Nov 2026): EXPERIMENTAL.** Synthetic tests and a local smoke run verify execution and selected point-in-time invariants, **not** historical X coverage, forecasting alpha, or deployable trading performance. Original five-ticker backtest output was deliberately excluded. Remaining Grok submissions are pending a neutral code review.
 
-# CWT Quant — Research-Grade Reference Implementation
+## Detailed notes: research-grade reference implementation
 
 **Status: EXPERIMENTAL / INDEPENDENT CANDIDATE**  
 Prepared 15 November 2026. Assessment target ~17 November 2026.
